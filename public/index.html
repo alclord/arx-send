@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ARX Send</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap');
+
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0d1117;--surface:#161b22;--surface2:#1e2530;--border:#2a3140;
+      --accent:#25d366;--accent2:#128c7e;--glow:rgba(37,211,102,.15);
+      --red:#f04747;--yellow:#faa61a;--text:#e6edf3;--muted:#7d8590;
+      --radius:12px;
+    }
+    body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
+
+    /* ── LOGIN ── */
+    #loginScreen{
+      position:fixed;inset:0;background:var(--bg);z-index:200;
+      display:flex;align-items:center;justify-content:center;
+    }
+    #loginScreen.hidden{display:none}
+    .login-card{
+      background:var(--surface);border:1px solid var(--border);border-radius:20px;
+      padding:40px 36px;width:90%;max-width:400px;text-align:center;
+    }
+    .login-logo{
+      width:200px;height:auto;
+      display:flex;align-items:center;justify-content:center;margin:0 auto 24px;
+    }
+    .login-logo img{width:100%;height:auto;display:block;border-radius:8px}
+    .login-card h1{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;margin-bottom:6px}
+    .login-card p{font-size:13px;color:var(--muted);margin-bottom:28px;line-height:1.6}
+    .login-input-wrap{position:relative;margin-bottom:12px}
+    .login-input-wrap input{
+      width:100%;background:var(--surface2);border:1.5px solid var(--border);
+      border-radius:10px;padding:12px 14px;color:var(--text);font-size:15px;
+      font-family:'DM Sans',sans-serif;outline:none;transition:border-color .2s;text-align:center;
+      letter-spacing:.5px;
+    }
+    .login-input-wrap input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--glow)}
+    .login-input-wrap input::placeholder{color:var(--muted);letter-spacing:0}
+    .login-hint{font-size:11px;color:var(--muted);margin-bottom:20px}
+    .login-error{font-size:12px;color:var(--red);margin-bottom:12px;min-height:16px}
+    .btn-login{
+      width:100%;padding:13px;background:var(--accent);color:#fff;border:none;
+      border-radius:10px;font-family:'Syne',sans-serif;font-size:15px;font-weight:700;
+      cursor:pointer;transition:all .2s;box-shadow:0 4px 20px rgba(37,211,102,.25);
+    }
+    .btn-login:hover{background:#1fc25c;transform:translateY(-1px)}
+
+    /* ── HEADER ── */
+    header{
+      background:linear-gradient(135deg,#0a1a12,#0d1117);
+      border-bottom:1px solid var(--border);
+      padding:16px 32px;display:flex;align-items:center;gap:14px;
+      position:relative;
+    }
+    header::after{
+      content:'';position:absolute;bottom:0;left:0;right:0;height:1px;
+      background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:.3;
+    }
+    .logo{
+      height:40px;width:auto;
+      display:flex;align-items:center;justify-content:center;
+      flex-shrink:0;
+    }
+    .logo img{height:38px;width:auto;display:block;border-radius:6px}
+    .header-title h1{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;letter-spacing:-.5px}
+    .header-title p{font-size:12px;color:var(--muted);margin-top:2px}
+    .session-badge{
+      font-size:11px;background:var(--glow);border:1px solid rgba(37,211,102,.3);
+      color:var(--accent);border-radius:6px;padding:3px 9px;font-family:'Syne',sans-serif;font-weight:700;
+      cursor:pointer;transition:all .15s;margin-left:6px;
+    }
+    .session-badge:hover{background:rgba(37,211,102,.2)}
+    .conn-area{margin-left:auto;display:flex;align-items:center;gap:10px}
+    .status-badge{
+      display:flex;align-items:center;gap:7px;
+      background:var(--surface2);border:1px solid var(--border);
+      border-radius:20px;padding:6px 14px;font-size:12px;
+    }
+    .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0}
+    .dot.ready{background:var(--accent);box-shadow:0 0 8px var(--accent);animation:pulse 2s infinite}
+    .dot.qr{background:var(--yellow);animation:pulse 1s infinite}
+    .dot.connecting{background:var(--yellow)}
+    .dot.error{background:var(--red)}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+    .btn-connect{
+      padding:8px 18px;background:var(--accent);color:#fff;border:none;
+      border-radius:8px;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;
+      cursor:pointer;transition:all .2s;
+    }
+    .btn-connect:hover{background:#1fc25c;transform:translateY(-1px)}
+    .btn-connect.disconnect{background:rgba(240,71,71,.15);border:1px solid rgba(240,71,71,.3);color:var(--red)}
+    .btn-connect.disconnect:hover{background:rgba(240,71,71,.25)}
+
+    /* ── LAYOUT ── */
+    .main{display:flex;flex:1;overflow:hidden;height:calc(100vh - 73px)}
+
+    /* LEFT */
+    .left{width:380px;flex-shrink:0;border-right:1px solid var(--border);display:flex;flex-direction:column}
+    .panel-header{padding:14px 16px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+    .panel-title{font-family:'Syne',sans-serif;font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
+    .sel-info{display:flex;align-items:center;gap:8px}
+    .sel-badge{background:var(--accent);color:#fff;font-family:'Syne',sans-serif;font-size:11px;font-weight:700;border-radius:20px;padding:2px 10px}
+    .icon-btn{background:none;border:1px solid var(--border);border-radius:7px;padding:5px 8px;cursor:pointer;font-size:13px;color:var(--muted);transition:all .15s}
+    .icon-btn:hover{border-color:var(--accent);color:var(--accent)}
+    .search-bar{padding:10px 14px;border-bottom:1px solid var(--border)}
+    .search-bar input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .2s}
+    .search-bar input:focus{border-color:var(--accent)}
+    .search-bar input::placeholder{color:var(--muted)}
+    .filter-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);background:var(--surface)}
+    .filter-tab{flex:1;padding:8px;font-size:11px;font-weight:600;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;transition:all .15s}
+    .filter-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+    .sel-toolbar{display:flex;align-items:center;justify-content:space-between;padding:6px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:11px}
+    .sel-toolbar button{background:none;border:none;font-size:11px;cursor:pointer;color:var(--muted);padding:2px 6px;border-radius:4px;transition:all .15s}
+    .sel-toolbar button:hover{color:var(--accent);background:var(--surface)}
+    .sel-toolbar button.danger:hover{color:var(--red)}
+    .contacts-list{flex:1;overflow-y:auto}
+    .contacts-list::-webkit-scrollbar{width:4px}
+    .contacts-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+    .contact-item{display:flex;align-items:center;gap:11px;padding:10px 14px;cursor:pointer;border-bottom:1px solid rgba(42,49,64,.5);transition:background .12s;user-select:none}
+    .contact-item:hover{background:var(--surface2)}
+    .contact-item.selected{background:rgba(37,211,102,.07)}
+    .cb{width:18px;height:18px;border-radius:5px;flex-shrink:0;border:1.5px solid var(--border);background:var(--surface2);display:flex;align-items:center;justify-content:center;transition:all .15s}
+    .contact-item.selected .cb{background:var(--accent);border-color:var(--accent);box-shadow:0 0 8px var(--glow)}
+    .cb svg{display:none;width:10px;height:10px;stroke:#fff;stroke-width:3}
+    .contact-item.selected .cb svg{display:block}
+    .avatar{width:38px;height:38px;border-radius:50%;flex-shrink:0;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-size:14px;font-weight:700;color:var(--accent)}
+    .contact-info{flex:1;min-width:0}
+    .contact-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .contact-sub{font-size:10px;color:var(--muted);margin-top:1px}
+    .badge-group{font-size:9px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;background:rgba(37,211,102,.1);color:var(--accent);border:1px solid rgba(37,211,102,.2);border-radius:4px;padding:2px 5px;flex-shrink:0}
+    .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px;gap:10px;color:var(--muted);text-align:center;flex:1}
+    .empty-state .icon{font-size:36px}
+    .empty-state p{font-size:13px;line-height:1.6}
+
+    /* RIGHT */
+    .right{flex:1;display:flex;flex-direction:column;overflow:hidden}
+    .tabs{display:flex;border-bottom:1px solid var(--border);background:var(--surface)}
+    .tab{padding:12px 20px;font-family:'Syne',sans-serif;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:6px}
+    .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+    .tab-content{display:none;flex:1;overflow-y:auto;padding:20px 24px;flex-direction:column;gap:16px}
+    .tab-content.active{display:flex}
+    .tab-content::-webkit-scrollbar{width:4px}
+    .tab-content::-webkit-scrollbar-thumb{background:var(--border)}
+    .field-label{font-family:'Syne',sans-serif;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+    .mode-toggle{display:flex;gap:6px}
+    .mode-btn{flex:1;padding:8px 6px;border-radius:8px;font-size:11px;font-weight:600;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;transition:all .15s;text-align:center}
+    .mode-btn.active{background:var(--glow);border-color:var(--accent);color:var(--accent)}
+    .msg-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;transition:border-color .2s}
+    .msg-wrap:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--glow)}
+    textarea{width:100%;resize:none;background:none;border:none;outline:none;font-family:'DM Sans',sans-serif;font-size:13px;color:var(--text);padding:12px 14px;min-height:120px;caret-color:var(--accent);line-height:1.6}
+    textarea::placeholder{color:var(--muted)}
+    .msg-footer-bar{display:flex;justify-content:space-between;align-items:center;padding:6px 12px;border-top:1px solid var(--border);background:var(--surface2);font-size:10px;color:var(--muted)}
+    .file-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:24px;text-align:center;cursor:pointer;transition:all .2s;position:relative}
+    .file-zone:hover,.file-zone.drag{border-color:var(--accent);background:var(--glow)}
+    .file-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+    .file-zone-icon{font-size:28px;margin-bottom:8px}
+    .file-zone-text{font-size:12px;color:var(--muted);line-height:1.5}
+    .file-zone-text strong{color:var(--text)}
+    .file-preview{display:none;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;flex-direction:row;align-items:center;gap:12px}
+    .file-preview.show{display:flex}
+    .file-thumb{width:48px;height:48px;border-radius:8px;flex-shrink:0;overflow:hidden;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:22px}
+    .file-thumb img{width:100%;height:100%;object-fit:cover}
+    .file-meta{flex:1;min-width:0}
+    .file-meta .fname{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .file-meta .fsize{font-size:10px;color:var(--muted);margin-top:3px}
+    .file-remove{background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:2px;transition:color .15s}
+    .file-remove:hover{color:var(--red)}
+    .delay-opts{display:flex;gap:6px;flex-wrap:wrap}
+    .delay-opt{background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:5px 12px;font-size:12px;color:var(--muted);cursor:pointer;transition:all .15s}
+    .delay-opt.active{background:var(--glow);border-color:var(--accent);color:var(--accent)}
+    .summary-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+    .summary-row{display:flex;justify-content:space-between;align-items:center}
+    .summary-row span:first-child{font-size:12px;color:var(--muted)}
+    .summary-row span:last-child{font-size:12px;color:var(--text);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .summary-row .accent{color:var(--accent);font-family:'Syne',sans-serif;font-weight:700;font-size:14px}
+    .progress-box{display:none;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+    .progress-box.show{display:block}
+    .progress-header{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;font-size:12px;font-weight:500}
+    .progress-bar-wrap{height:3px;background:var(--border)}
+    .progress-bar{height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));width:0%;transition:width .4s}
+    .progress-log{max-height:140px;overflow-y:auto;padding:8px 14px;font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:3px}
+    .progress-log::-webkit-scrollbar{width:3px}
+    .progress-log::-webkit-scrollbar-thumb{background:var(--border)}
+    .log-done{color:var(--accent)}.log-error{color:var(--red)}.log-sending{color:var(--yellow)}
+    .warning-box{background:rgba(250,166,26,.06);border:1px solid rgba(250,166,26,.18);border-radius:var(--radius);padding:10px 14px;font-size:11px;color:#e6c07b;line-height:1.6}
+    .actions{display:flex;gap:8px;margin-top:auto;padding-top:8px}
+    .btn-primary{flex:1;padding:13px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 4px 20px rgba(37,211,102,.2)}
+    .btn-primary:hover{background:#1fc25c;transform:translateY(-1px);box-shadow:0 6px 24px rgba(37,211,102,.3)}
+    .btn-primary:disabled{background:var(--surface2);color:var(--muted);box-shadow:none;transform:none;cursor:not-allowed}
+    .btn-stop{flex:1;padding:13px;background:rgba(240,71,71,.1);border:1px solid rgba(240,71,71,.3);color:var(--red);border-radius:var(--radius);font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;display:none;transition:all .2s}
+    .btn-stop:hover{background:rgba(240,71,71,.2)}
+
+    /* QR modal */
+    #qrModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center}
+    #qrModal.show{display:flex}
+    .qr-card{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:32px;text-align:center;max-width:340px;width:90%}
+    .qr-card h2{font-family:'Syne',sans-serif;font-size:18px;font-weight:800;margin-bottom:16px}
+    #qrImage{width:220px;height:220px;border-radius:12px;background:#fff;padding:8px}
+    .qr-steps{margin-top:16px;text-align:left;font-size:12px;color:var(--muted);line-height:1.8}
+    .qr-steps span{color:var(--accent);font-weight:600}
+    #qrLoading{display:none;flex-direction:column;align-items:center;gap:16px;padding:20px 0}
+    #qrLoading.show{display:flex}
+    .spinner{width:48px;height:48px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    #qrLoadingMsg{font-size:13px;color:var(--muted)}
+    #qrError{display:none;flex-direction:column;align-items:center;gap:14px;padding:20px 0}
+    #qrError.show{display:flex}
+    #qrErrorMsg{font-size:13px;color:var(--red);text-align:center}
+    .qr-close{position:absolute;top:12px;right:16px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1;padding:4px}
+    .qr-close:hover{color:var(--text)}
+  </style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">
+      <img src="/logo.png" alt="ARX Administradora"/>
+    </div>
+    <h1>ARX Send</h1>
+    <p>Digite o nome da sua sessão para entrar.<br>Cada pessoa usa uma sessão própria.</p>
+    <div class="login-input-wrap">
+      <input type="text" id="sessionInput" placeholder="ex: yuri, equipe-vendas, suporte" maxlength="30"
+        oninput="clearLoginError()" onkeydown="if(event.key==='Enter') enterSession()"/>
+    </div>
+    <div class="login-hint">Letras, números, hífen e underline. Máx. 30 caracteres.</div>
+    <div class="login-error" id="loginError"></div>
+    <button class="btn-login" onclick="enterSession()">Entrar na sessão →</button>
+  </div>
+</div>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <img src="/logo.png" alt="ARX Administradora"/>
+  </div>
+  <div class="header-title">
+    <h1>ARX Send</h1>
+    <p>Disparo em massa via WhatsApp</p>
+  </div>
+  <button class="session-badge" id="sessionBadge" onclick="switchSession()" title="Trocar sessão"></button>
+  <div class="conn-area">
+    <div class="status-badge">
+      <div class="dot" id="statusDot"></div>
+      <span id="statusText">Desconectado</span>
+    </div>
+    <button class="btn-connect" id="connectBtn" onclick="toggleConnect()">Conectar</button>
+  </div>
+</header>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="left">
+    <div class="panel-header">
+      <span class="panel-title">Contatos</span>
+      <div class="sel-info">
+        <span class="sel-badge" id="selBadge">0</span>
+        <button class="icon-btn" onclick="reloadContacts()" title="Recarregar">↻</button>
+      </div>
+    </div>
+    <div class="search-bar">
+      <input type="text" id="searchInput" placeholder="🔍  Filtrar contatos e grupos..." oninput="renderList()"/>
+    </div>
+    <div class="filter-tabs">
+      <button class="filter-tab active" onclick="setFilter('all',this)">Todos</button>
+      <button class="filter-tab"        onclick="setFilter('people',this)">Contatos</button>
+      <button class="filter-tab"        onclick="setFilter('groups',this)">Grupos</button>
+    </div>
+    <div class="sel-toolbar">
+      <span id="listCount" style="color:var(--muted)">0 itens</span>
+      <div style="display:flex;gap:4px">
+        <button onclick="selectAll()">Todos</button>
+        <button class="danger" onclick="deselectAll()">Limpar</button>
+      </div>
+    </div>
+    <div class="contacts-list" id="contactsList">
+      <div class="empty-state">
+        <div class="icon">📱</div>
+        <p>Conecte seu WhatsApp<br>para ver seus contatos</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="tabs">
+      <button class="tab active" data-tab="message" onclick="switchTab('message',this)">💬 Mensagem</button>
+      <button class="tab"        data-tab="send"    onclick="switchTab('send',this)">🚀 Disparar</button>
+    </div>
+
+    <div class="tab-content active" id="tab-message">
+      <div>
+        <div class="field-label">O que enviar</div>
+        <div class="mode-toggle">
+          <button class="mode-btn active" data-mode="text" onclick="setMode('text',this)">💬 Só texto</button>
+          <button class="mode-btn"        data-mode="file" onclick="setMode('file',this)">📎 Só arquivo</button>
+          <button class="mode-btn"        data-mode="both" onclick="setMode('both',this)">💬+📎 Texto + arquivo</button>
+        </div>
+      </div>
+      <div id="textSection">
+        <div class="field-label">Texto da mensagem</div>
+        <div class="msg-wrap">
+          <textarea id="msgText" placeholder="Digite a mensagem..." oninput="updateSendBtn()"></textarea>
+          <div class="msg-footer-bar">
+            <span id="charCount">0 caracteres</span>
+            <span>Shift+Enter = nova linha</span>
+          </div>
+        </div>
+      </div>
+      <div id="fileSection" style="display:none">
+        <div class="field-label">Arquivo anexo</div>
+        <div class="file-preview" id="filePreview">
+          <div class="file-thumb" id="fileThumb">📄</div>
+          <div class="file-meta">
+            <div class="fname" id="fileName">—</div>
+            <div class="fsize" id="fileSize">—</div>
+          </div>
+          <button class="file-remove" onclick="removeFile()">×</button>
+        </div>
+        <div class="file-zone" id="fileZone">
+          <input type="file" id="fileInput" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip"/>
+          <div class="file-zone-icon">📁</div>
+          <div class="file-zone-text"><strong>Clique para selecionar</strong> ou arraste aqui<br>Imagens, vídeos, PDF, documentos, áudio...</div>
+        </div>
+      </div>
+      <div>
+        <div class="field-label">Intervalo entre envios</div>
+        <div class="delay-opts" id="delayOpts">
+          <button class="delay-opt"        data-v="2000">2s</button>
+          <button class="delay-opt active" data-v="3000">3s</button>
+          <button class="delay-opt"        data-v="5000">5s</button>
+          <button class="delay-opt"        data-v="8000">8s</button>
+          <button class="delay-opt"        data-v="15000">15s</button>
+        </div>
+      </div>
+      <div class="warning-box">
+        ⚠️ <strong style="color:var(--yellow)">Atenção:</strong> Disparos em massa podem resultar em banimento pelo WhatsApp. Use intervalos maiores e listas menores.
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-send">
+      <div class="summary-box">
+        <div class="summary-row"><span>Destinatários</span><span class="accent" id="sumContacts">0</span></div>
+        <div class="summary-row"><span>Intervalo</span><span id="sumDelay">3s</span></div>
+        <div class="summary-row"><span>Mensagem</span><span id="sumMsg">—</span></div>
+        <div class="summary-row"><span>Arquivo</span><span id="sumFile">—</span></div>
+      </div>
+      <div class="progress-box" id="progressBox">
+        <div class="progress-header">
+          <span id="progLabel">Enviando...</span>
+          <span id="progCounter" style="color:var(--accent);font-weight:700"></span>
+        </div>
+        <div class="progress-bar-wrap"><div class="progress-bar" id="progBar"></div></div>
+        <div class="progress-log" id="progLog"></div>
+      </div>
+      <div class="actions">
+        <button class="btn-primary" id="sendBtn" onclick="startSend()" disabled>🚀 Iniciar Disparo</button>
+        <button class="btn-stop"    id="stopBtn" onclick="stopSend()">⏹ Parar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- QR MODAL -->
+<div id="qrModal">
+  <div class="qr-card">
+    <button class="qr-close" onclick="closeQrModal()" title="Fechar">&#x2715;</button>
+    <h2>Conectar WhatsApp</h2>
+    <div id="qrLoading">
+      <div class="spinner"></div>
+      <span id="qrLoadingMsg">Abrindo navegador, aguarde...</span>
+    </div>
+    <div id="qrError">
+      <span id="qrErrorMsg">Falha na conexão.</span>
+      <button class="btn-primary" style="padding:8px 20px;font-size:13px" onclick="toggleConnect()">Tentar novamente</button>
+    </div>
+    <p id="qrInstructions" style="display:none">Escaneie o QR code abaixo com seu celular</p>
+    <img id="qrImage" src="" alt="QR Code" style="display:none"/>
+    <div class="qr-steps" id="qrSteps" style="display:none">
+      <span>1.</span> Abra o WhatsApp no celular<br>
+      <span>2.</span> Toque em ⋮ Menu → Dispositivos conectados<br>
+      <span>3.</span> Toque em "Conectar um dispositivo"<br>
+      <span>4.</span> Aponte a câmera para o QR code
+    </div>
+  </div>
+</div>
+
+<script>
+const socket = io();
+
+// ── Sessão ──
+let sessionId = null;
+
+function enterSession() {
+  const raw = document.getElementById('sessionInput').value.trim();
+  const id  = raw.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  if (!id || id.length < 2) {
+    document.getElementById('loginError').textContent = 'Nome deve ter ao menos 2 caracteres válidos.';
+    return;
+  }
+  sessionId = id;
+  localStorage.setItem('wa_session', id);
+  document.getElementById('loginScreen').classList.add('hidden');
+  document.getElementById('sessionBadge').textContent = '# ' + id;
+  socket.emit('join_session', id);
+}
+
+function clearLoginError() {
+  document.getElementById('loginError').textContent = '';
+}
+
+function switchSession() {
+  if (!confirm('Trocar de sessão? Você sairá da sessão atual.')) return;
+  localStorage.removeItem('wa_session');
+  location.reload();
+}
+
+// Entra automaticamente se já existe sessão salva
+const saved = localStorage.getItem('wa_session');
+if (saved) {
+  document.getElementById('sessionInput').value = saved;
+  // Aguarda socket conectar antes de entrar
+  socket.on('connect', () => { if (!sessionId) enterSession(); });
+} else {
+  document.getElementById('loginScreen').classList.remove('hidden');
+}
+
+socket.on('session_joined', ({ sessionId: id }) => {
+  sessionId = id;
+  document.getElementById('sessionBadge').textContent = '# ' + id;
+  document.getElementById('loginScreen').classList.add('hidden');
+});
+
+// ── Estado ──
+let contacts     = [];
+let selectedIds  = new Set();
+let currentFilter = 'all';
+let sendMode     = 'text';
+let selectedDelay = 3000;
+let uploadedFile = null;
+let isSending    = false;
+let waStatus     = 'disconnected';
+
+// ── Socket events ──
+socket.on('status', ({ status, message }) => {
+  waStatus = status;
+  updateStatusUI(status, message);
+  if (status === 'ready' || status === 'connecting') {
+    document.getElementById('qrModal').classList.remove('show');
+  }
+  if (status === 'error') {
+    document.getElementById('qrLoading').classList.remove('show');
+    document.getElementById('qrImage').style.display = 'none';
+    document.getElementById('qrInstructions').style.display = 'none';
+    document.getElementById('qrSteps').style.display = 'none';
+    document.getElementById('qrErrorMsg').textContent = message || 'Falha na conexão.';
+    document.getElementById('qrError').classList.add('show');
+    document.getElementById('qrModal').classList.add('show');
+  }
+});
+
+socket.on('qr', ({ qr }) => {
+  document.getElementById('qrLoading').classList.remove('show');
+  document.getElementById('qrError').classList.remove('show');
+  document.getElementById('qrImage').src = qr;
+  document.getElementById('qrImage').style.display = '';
+  document.getElementById('qrInstructions').style.display = '';
+  document.getElementById('qrSteps').style.display = '';
+  document.getElementById('qrModal').classList.add('show');
+});
+
+socket.on('contacts', ({ contacts: c }) => {
+  contacts = c;
+  for (const id of selectedIds) {
+    if (!contacts.find(x => x.id === id)) selectedIds.delete(id);
+  }
+  renderList();
+  updateSendBtn();
+});
+
+socket.on('send_start', ({ total }) => {
+  isSending = true;
+  document.getElementById('progressBox').classList.add('show');
+  document.getElementById('progLog').innerHTML = '';
+  document.getElementById('progBar').style.width = '0%';
+  document.getElementById('progLabel').textContent = 'Iniciando...';
+  document.getElementById('progCounter').textContent = `0 / ${total}`;
+  document.getElementById('sendBtn').style.display = 'none';
+  document.getElementById('stopBtn').style.display = '';
+});
+
+socket.on('send_progress', ({ index, total, name, status, error }) => {
+  const pct = Math.round(((index + 1) / total) * 100);
+  document.getElementById('progBar').style.width = pct + '%';
+  document.getElementById('progCounter').textContent = `${index + 1} / ${total}`;
+  const log = document.getElementById('progLog');
+  if (status === 'sending') {
+    document.getElementById('progLabel').textContent = `Enviando para ${name}...`;
+    const el = document.createElement('div');
+    el.className = 'log-sending'; el.textContent = `⏳ ${name}`; el.id = 'log_' + index;
+    log.appendChild(el);
+  } else if (status === 'done') {
+    const el = document.getElementById('log_' + index) || log.lastChild;
+    if (el) { el.className = 'log-done'; el.textContent = `✓ ${name}`; }
+  } else if (status === 'error') {
+    const el = document.getElementById('log_' + index) || log.lastChild;
+    if (el) { el.className = 'log-error'; el.textContent = `✗ ${name}: ${error}`; }
+  }
+  log.scrollTop = log.scrollHeight;
+});
+
+socket.on('send_done', () => {
+  isSending = false;
+  document.getElementById('progLabel').textContent = '✅ Disparo concluído!';
+  document.getElementById('progBar').style.width = '100%';
+  document.getElementById('sendBtn').style.display = '';
+  document.getElementById('stopBtn').style.display = 'none';
+  updateSendBtn();
+});
+
+socket.on('send_stopped', () => {
+  isSending = false;
+  document.getElementById('progLabel').textContent = '⏹ Parado';
+  document.getElementById('sendBtn').style.display = '';
+  document.getElementById('stopBtn').style.display = 'none';
+  updateSendBtn();
+});
+
+// ── API helpers ──
+function api(path, opts) {
+  return fetch(`/api/${sessionId}${path}`, opts);
+}
+
+// ── QR ──
+function closeQrModal() { document.getElementById('qrModal').classList.remove('show'); }
+
+function showQrLoading(msg) {
+  document.getElementById('qrLoadingMsg').textContent = msg || 'Abrindo navegador, aguarde...';
+  document.getElementById('qrLoading').classList.add('show');
+  document.getElementById('qrError').classList.remove('show');
+  document.getElementById('qrImage').style.display = 'none';
+  document.getElementById('qrImage').src = '';
+  document.getElementById('qrInstructions').style.display = 'none';
+  document.getElementById('qrSteps').style.display = 'none';
+  document.getElementById('qrModal').classList.add('show');
+}
+
+// ── UI ──
+function updateStatusUI(status, message) {
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  const btn = document.getElementById('connectBtn');
+  dot.className = 'dot ' + status;
+  txt.textContent = message || status;
+  if (status === 'ready') {
+    btn.textContent = 'Desconectar'; btn.className = 'btn-connect disconnect'; btn.disabled = false;
+  } else if (status === 'connecting') {
+    btn.textContent = 'Conectando...'; btn.className = 'btn-connect'; btn.disabled = true;
+  } else if (status === 'qr') {
+    btn.textContent = 'Novo QR'; btn.className = 'btn-connect'; btn.disabled = false;
+  } else {
+    btn.textContent = 'Conectar'; btn.className = 'btn-connect'; btn.disabled = false;
+  }
+}
+
+async function toggleConnect() {
+  if (!sessionId) return;
+  if (waStatus === 'ready') {
+    await api('/disconnect', { method: 'POST' });
+  } else if (waStatus !== 'connecting') {
+    showQrLoading(waStatus === 'qr' ? 'Gerando novo QR code...' : 'Abrindo navegador, aguarde...');
+    await api('/connect', { method: 'POST' });
+  }
+}
+
+async function reloadContacts() {
+  if (waStatus !== 'ready') return;
+  await api('/reload-contacts', { method: 'POST' });
+}
+
+// ── Contacts ──
+function setFilter(f, btn) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderList();
+}
+
+function renderList() {
+  const q    = document.getElementById('searchInput').value.toLowerCase().trim();
+  const list = document.getElementById('contactsList');
+  if (!contacts.length) {
+    list.innerHTML = `<div class="empty-state"><div class="icon">${waStatus==='ready'?'📭':'📱'}</div><p>${waStatus==='ready'?'Nenhum contato carregado':'Conecte seu WhatsApp<br>para ver seus contatos'}</p></div>`;
+    return;
+  }
+  const filtered = contacts.filter(c => {
+    if (currentFilter === 'people' && c.isGroup)  return false;
+    if (currentFilter === 'groups' && !c.isGroup) return false;
+    if (q && !c.name.toLowerCase().includes(q))   return false;
+    return true;
+  });
+  document.getElementById('listCount').textContent = `${filtered.length} itens`;
+  if (!filtered.length) {
+    list.innerHTML = `<div class="empty-state"><div class="icon">🔍</div><p>Nenhum resultado para "<em>${esc(q)}</em>"</p></div>`;
+    return;
+  }
+  list.innerHTML = filtered.map(c => {
+    const sel = selectedIds.has(c.id);
+    return `<div class="contact-item${sel?' selected':''}" onclick="toggleContact('${esc(c.id)}')">
+      <div class="cb"><svg viewBox="0 0 12 10" fill="none"><polyline points="1,5 4,8 11,1"/></svg></div>
+      <div class="avatar">${c.name.charAt(0).toUpperCase()}</div>
+      <div class="contact-info">
+        <div class="contact-name">${esc(c.name)}</div>
+        ${c.unread?`<div class="contact-sub">${c.unread} não lida(s)</div>`:''}
+      </div>
+      ${c.isGroup?'<span class="badge-group">Grupo</span>':''}
+    </div>`;
+  }).join('');
+  document.getElementById('selBadge').textContent = selectedIds.size;
+  updateSendBtn();
+}
+
+function toggleContact(id) {
+  if (selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id);
+  renderList(); updateSendBtn();
+}
+
+function selectAll() {
+  const q = document.getElementById('searchInput').value.toLowerCase().trim();
+  contacts.filter(c => {
+    if (currentFilter === 'people' && c.isGroup)  return false;
+    if (currentFilter === 'groups' && !c.isGroup) return false;
+    if (q && !c.name.toLowerCase().includes(q))   return false;
+    return true;
+  }).forEach(c => selectedIds.add(c.id));
+  renderList(); updateSendBtn();
+}
+
+function deselectAll() { selectedIds.clear(); renderList(); updateSendBtn(); }
+
+// ── Mode & Delay ──
+function setMode(mode, btn) {
+  sendMode = mode;
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('textSection').style.display = mode === 'file' ? 'none' : '';
+  document.getElementById('fileSection').style.display = mode === 'text' ? 'none' : '';
+  updateSendBtn();
+}
+
+document.querySelectorAll('.delay-opt').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.delay-opt').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedDelay = parseInt(btn.dataset.v);
+    document.getElementById('sumDelay').textContent = btn.textContent;
+  });
+});
+
+document.getElementById('msgText').addEventListener('input', function() {
+  document.getElementById('charCount').textContent = this.value.length + ' caracteres';
+  updateSendBtn();
+});
+
+// ── File ──
+const fileInput = document.getElementById('fileInput');
+const fileZone  = document.getElementById('fileZone');
+
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+fileZone.addEventListener('dragover',  e => { e.preventDefault(); fileZone.classList.add('drag'); });
+fileZone.addEventListener('dragleave', () => fileZone.classList.remove('drag'));
+fileZone.addEventListener('drop', e => {
+  e.preventDefault(); fileZone.classList.remove('drag');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+
+async function handleFile(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res  = await api('/upload', { method: 'POST', body: formData });
+  const data = await res.json();
+  if (!data.ok) { alert('Erro ao enviar arquivo: ' + data.error); return; }
+  uploadedFile = data;
+  document.getElementById('fileName').textContent = data.original;
+  document.getElementById('fileSize').textContent = formatBytes(data.size);
+  const thumb = document.getElementById('fileThumb');
+  thumb.innerHTML = data.mimetype.startsWith('image/') ? `<img src="${data.path}" alt="preview"/>` : fileIcon(data.mimetype, data.original);
+  document.getElementById('filePreview').classList.add('show');
+  document.getElementById('fileZone').style.display = 'none';
+  updateSendBtn();
+}
+
+function removeFile() {
+  uploadedFile = null; fileInput.value = '';
+  document.getElementById('filePreview').classList.remove('show');
+  document.getElementById('fileZone').style.display = '';
+  updateSendBtn();
+}
+
+// ── Tabs ──
+function switchTab(tab, btn) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tab-' + tab).classList.add('active');
+  if (tab === 'send') updateSummary();
+}
+
+function updateSummary() {
+  document.getElementById('sumContacts').textContent = selectedIds.size;
+  document.getElementById('sumMsg').textContent  = sendMode === 'file' ? '(sem texto)' : (document.getElementById('msgText').value.trim() || '—');
+  document.getElementById('sumFile').textContent = uploadedFile ? uploadedFile.original : '—';
+}
+
+// ── Send ──
+function updateSendBtn() {
+  const hasText    = document.getElementById('msgText').value.trim().length > 0;
+  const hasContent = sendMode === 'text' ? hasText : sendMode === 'file' ? !!uploadedFile : hasText && !!uploadedFile;
+  document.getElementById('sendBtn').disabled = !(selectedIds.size > 0 && hasContent && waStatus === 'ready') || isSending;
+}
+
+async function startSend() {
+  if (isSending) return;
+  updateSummary();
+  switchTab('send', document.querySelector('.tab[data-tab="send"]'));
+  await api('/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contactIds: [...selectedIds],
+      message:    sendMode === 'file' ? '' : document.getElementById('msgText').value,
+      filename:   uploadedFile?.filename || null,
+      delayMs:    selectedDelay
+    })
+  });
+}
+
+async function stopSend() { await api('/stop', { method: 'POST' }); }
+
+// ── Helpers ──
+function fileIcon(mime, name) {
+  if (mime.startsWith('image/')) return '🖼️';
+  if (mime.startsWith('video/')) return '🎥';
+  if (mime.startsWith('audio/')) return '🎵';
+  if (mime.includes('pdf')) return '📄';
+  if (mime.includes('word') || /\.docx?$/.test(name)) return '📝';
+  if (mime.includes('sheet') || /\.xlsx?$/.test(name)) return '📊';
+  return '📁';
+}
+function formatBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+</script>
+</body>
+</html>

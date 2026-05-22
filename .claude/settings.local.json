@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\yuria\\\\OneDrive\\\\Área de Trabalho\\\\wa-sender\" -Recurse -Force)",
+      "Bash(Select-Object FullName, PSIsContainer)",
+      "Bash(Sort-Object FullName)",
+      "Bash(node src/server.js)",
+      "Bash(node -e \"const p = require\\('c:/Users/yuria/OneDrive/Área de Trabalho/wa-sender/node_modules/puppeteer-core/package.json'\\); console.log\\('puppeteer-core:', p.version\\)\")",
+      "PowerShell(Invoke-WebRequest -Uri \"http://localhost:3000/api/status\" -UseBasicParsing)",
+      "PowerShell(Get-Process -Name \"node\" -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Force -Confirm:$false)",
+      "Bash(curl -s -X POST http://localhost:3000/api/connect)",
+      "Bash(curl -s http://localhost:3000/api/status)",
+      "Bash(node -e \"const p = require\\('./node_modules/whatsapp-web.js/package.json'\\); console.log\\('whatsapp-web.js:', p.version\\)\")",
+      "Bash(node -e \"const p = require\\('./node_modules/whatsapp-web.js/package.json'\\); console.log\\('version:', p.version\\)\")",
+      "PowerShell(Remove-Item \"c:\\\\Users\\\\yuria\\\\OneDrive\\\\�rea de Trabalho\\\\wa-sender\\\\.wa_session\" -Recurse -Force -Confirm:$false -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Process -Name \"msedge\" -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Process -Name \"node\",\"msedge\" -ErrorAction SilentlyContinue)",
+      "Bash(npm install *)",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/whatsapp-web.js/package.json'\\).version\\)\")",
+      "PowerShell(Get-Process -Name \"node\",\"msedge\",\"chrome\" -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Process -Name \"node\",\"chrome\" -ErrorAction SilentlyContinue)",
+      "PowerShell(New-Item -ItemType Directory -Force -Path \"c:\\\\Users\\\\yuria\\\\OneDrive\\\\�rea de Trabalho\\\\wa-sender\\\\cache\")",
+      "Bash(ping -n 4 127.0.0.1)",
+      "Bash(curl -s http://localhost:3000/api/test/status)",
+      "Bash(git --version)"
+    ]
+  }
+}
