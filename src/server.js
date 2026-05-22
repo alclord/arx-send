@@ -126,8 +126,6 @@ async function connectSession(sessionId) {
         '--disable-translate',
         '--hide-scrollbars',
         '--no-first-run',
-        '--single-process',
-        '--no-zygote',
         '--window-size=1280,800',
         '--disable-blink-features=AutomationControlled',
       ]
