@@ -75,7 +75,7 @@ function saveCachedContacts(sessionId, contacts) {
 // ── Chromium ──
 function getChromiumPath() {
   if (process.platform === 'linux') {
-    const candidates = ['/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome'];
+    const candidates = ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser'];
     for (const p of candidates) {
       if (fs.existsSync(p)) return p;
     }
@@ -120,6 +120,14 @@ async function connectSession(sessionId) {
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--disable-extensions',
+        '--disable-background-networking',
+        '--disable-default-apps',
+        '--disable-sync',
+        '--disable-translate',
+        '--hide-scrollbars',
+        '--no-first-run',
+        '--single-process',
+        '--no-zygote',
         '--window-size=1280,800',
         '--disable-blink-features=AutomationControlled',
       ]
