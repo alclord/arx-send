@@ -113,6 +113,7 @@ async function connectSession(sessionId) {
     puppeteer: {
       headless:        true,
       executablePath,
+      timeout:         120000,
       protocolTimeout: 120000,
       args: [
         '--no-sandbox',
