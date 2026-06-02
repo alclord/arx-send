@@ -347,19 +347,38 @@ app.post('/api/:sessionId/send', sessionMiddleware, async (req, res) => {
 
     emit(sid, 'send_progress', { index: i, total, name, status: 'sending' });
 
-    try {
+    const sendTo = async (id) => {
       if (media && message?.trim()) {
-        await sess.client.sendMessage(contactIds[i], media, { caption: message.trim() });
+        await sess.client.sendMessage(id, media, { caption: message.trim() });
       } else if (media) {
-        await sess.client.sendMessage(contactIds[i], media);
+        await sess.client.sendMessage(id, media);
       } else {
-        await sess.client.sendMessage(contactIds[i], message.trim());
+        await sess.client.sendMessage(id, message.trim());
       }
-      emit(sid, 'send_progress', { index: i, total, name, status: 'done' });
+    };
+
+    let sent = false;
+    try {
+      await sendTo(contactIds[i]);
+      sent = true;
     } catch (err) {
-      console.error(`[${sid}] Erro ao enviar para ${name}:`, err.message);
-      emit(sid, 'send_progress', { index: i, total, name, status: 'error', error: err.message });
+      // Se falhou com erro de LID, tenta sem o nono dígito
+      const isLidError = err.message.includes('LID') || err.message.includes('lid');
+      const altId = isLidError ? removeNinthDigit(contactIds[i]) : null;
+      if (altId) {
+        try {
+          await sendTo(altId);
+          sent = true;
+        } catch (err2) {
+          console.error(`[${sid}] Erro ao enviar para ${name}:`, err2.message);
+          emit(sid, 'send_progress', { index: i, total, name, status: 'error', error: err2.message });
+        }
+      } else {
+        console.error(`[${sid}] Erro ao enviar para ${name}:`, err.message);
+        emit(sid, 'send_progress', { index: i, total, name, status: 'error', error: err.message });
+      }
     }
+    if (sent) emit(sid, 'send_progress', { index: i, total, name, status: 'done' });
 
     if (i < contactIds.length - 1 && !sess.stopRequested) await sleep(delay);
   }
@@ -373,6 +392,12 @@ app.post('/api/:sessionId/send', sessionMiddleware, async (req, res) => {
 });
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// Remove o nono dígito de números brasileiros (55 + DDD + 9 + 8 dígitos → 55 + DDD + 8 dígitos)
+function removeNinthDigit(id) {
+  const m = id.match(/^55(\d{2})9(\d{8})@c\.us$/);
+  return m ? `55${m[1]}${m[2]}@c.us` : null;
+}
 
 // ── Normalizar telefone ──
 function normalizePhone(raw) {
