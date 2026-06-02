@@ -23,12 +23,16 @@ app.use(express.static(path.join(__dirname, '../public')));
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // ── Diretórios ──
-const uploadsDir = path.join(__dirname, '../uploads');
-const cacheDir   = path.join(__dirname, '../cache');
-// Sessões fora do OneDrive/iCloud para evitar conflito de sync com arquivos do Chrome
+// Quando empacotado com pkg (process.pkg = true), usa AppData para arquivos graváveis
+const appDataBase = process.pkg
+  ? path.join(process.env.LOCALAPPDATA || os.homedir(), 'arx-send')
+  : path.join(__dirname, '..');
+
+const uploadsDir = path.join(appDataBase, 'uploads');
+const cacheDir   = path.join(appDataBase, 'cache');
 const sessionDir = process.platform === 'win32'
   ? path.join(process.env.LOCALAPPDATA || os.tmpdir(), 'arx-send', 'sessions')
-  : path.join(__dirname, '../.wa_sessions');
+  : path.join(appDataBase, '.wa_sessions');
 [uploadsDir, cacheDir, sessionDir].forEach(d => {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 });
@@ -105,6 +109,16 @@ function getChromiumPath() {
     }
     return undefined;
   }
+  // Windows: tenta Chrome instalado primeiro (mais rápido e sempre disponível)
+  const winCandidates = [
+    path.join(process.env.PROGRAMFILES       || 'C:\\Program Files',        'Google\\Chrome\\Application\\chrome.exe'),
+    path.join(process.env['PROGRAMFILES(X86)']|| 'C:\\Program Files (x86)', 'Google\\Chrome\\Application\\chrome.exe'),
+    path.join(process.env.LOCALAPPDATA       || '', 'Google\\Chrome\\Application\\chrome.exe'),
+  ];
+  for (const p of winCandidates) {
+    if (p && fs.existsSync(p)) return p;
+  }
+  // Fallback: Chromium do Puppeteer
   const base = path.join(process.env.USERPROFILE || process.env.HOME || '', '.cache', 'puppeteer', 'chrome');
   if (!fs.existsSync(base)) return undefined;
   const builds = fs.readdirSync(base).filter(d => d.startsWith('win64-'));
@@ -484,5 +498,10 @@ app.post('/api/:sessionId/extract-phones', sessionMiddleware, (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`\n🚀 WA Bulk Sender rodando em http://localhost:${PORT}\n`);
+  console.log(`\n🚀 ARX Send rodando em http://localhost:${PORT}\n`);
+  // Abre o navegador automaticamente quando rodando como .exe empacotado
+  if (process.pkg) {
+    const { exec } = require('child_process');
+    setTimeout(() => exec(`start http://localhost:${PORT}`), 1500);
+  }
 });
