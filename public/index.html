@@ -192,6 +192,11 @@
     .warning-box{background:rgba(250,166,26,.06);border:1px solid rgba(250,166,26,.18);border-radius:var(--radius);padding:10px 14px;font-size:11px;color:#e6c07b;line-height:1.6}
     .actions{display:flex;gap:8px;margin-top:auto;padding-top:8px}
     .send-sticky{display:flex;gap:8px;position:sticky;top:0;z-index:10;background:var(--bg);padding:4px 0 12px;margin-bottom:4px;border-bottom:1px solid var(--border)}
+    .vars-bar{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+    .var-btn{background:rgba(99,179,237,.1);border:1px solid rgba(99,179,237,.3);color:#63b3ed;border-radius:5px;padding:3px 9px;font-size:11px;font-family:'Syne',sans-serif;font-weight:600;cursor:pointer;transition:all .15s}
+    .var-btn:hover{background:rgba(99,179,237,.2)}
+    .msg-preview{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--muted);line-height:1.6;margin-top:6px;white-space:pre-wrap;max-height:80px;overflow-y:auto}
+    .msg-preview strong{color:var(--accent);font-weight:600}
     .btn-primary{flex:1;padding:13px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 4px 20px rgba(37,211,102,.2)}
     .btn-primary:hover{background:#1fc25c;transform:translateY(-1px);box-shadow:0 6px 24px rgba(37,211,102,.3)}
     .btn-primary:disabled{background:var(--surface2);color:var(--muted);box-shadow:none;transform:none;cursor:not-allowed}
@@ -339,11 +344,17 @@
       <div id="textSection">
         <div class="field-label">Texto da mensagem</div>
         <div class="msg-wrap">
-          <textarea id="msgText" placeholder="Digite a mensagem..." oninput="updateSendBtn()"></textarea>
+          <textarea id="msgText" placeholder="Digite a mensagem..." oninput="updateSendBtn();updateMsgPreview()"></textarea>
           <div class="msg-footer-bar">
             <span id="charCount">0 caracteres</span>
             <span>Shift+Enter = nova linha</span>
           </div>
+        </div>
+        <div id="varsSection" style="display:none">
+          <div class="field-label" style="margin-top:10px">Variáveis disponíveis — clique para inserir</div>
+          <div class="vars-bar" id="varsBar"></div>
+          <div class="field-label" style="margin-top:10px">Preview (1º contato importado)</div>
+          <div class="msg-preview" id="msgPreview">—</div>
         </div>
       </div>
       <div id="fileSection" style="display:none">
@@ -511,6 +522,7 @@ socket.on('session_joined', ({ sessionId: id }) => {
 // ── Estado ──
 let contacts        = [];
 let importedContacts = [];
+let sheetHeaders    = [];
 let selectedIds     = new Set();
 let currentFilter   = 'all';
 let sendMode        = 'text';
@@ -805,14 +817,20 @@ async function startSend() {
   if (isSending) return;
   updateSummary();
   switchTab('send', document.querySelector('.tab[data-tab="send"]'));
+
+  // Monta dicionário { phoneId: rowData } para mensagens personalizadas
+  const contactsData = {};
+  importedContacts.forEach(c => { if (c.rowData) contactsData[c.id] = c.rowData; });
+
   await api('/send', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      contactIds: [...selectedIds],
-      message:    sendMode === 'file' ? '' : document.getElementById('msgText').value,
-      filename:   uploadedFile?.filename || null,
-      delayMs:    selectedDelay
+      contactIds:   [...selectedIds],
+      message:      sendMode === 'file' ? '' : document.getElementById('msgText').value,
+      filename:     uploadedFile?.filename || null,
+      delayMs:      selectedDelay,
+      contactsData: Object.keys(contactsData).length ? contactsData : undefined
     })
   });
 }
@@ -836,6 +854,45 @@ function formatBytes(b) {
 }
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ── Variáveis da planilha ──
+function updateVarsBar() {
+  const section = document.getElementById('varsSection');
+  const bar     = document.getElementById('varsBar');
+  if (!sheetHeaders.length) { section.style.display = 'none'; return; }
+  section.style.display = '';
+  bar.innerHTML = sheetHeaders.map(h =>
+    `<button class="var-btn" onclick="insertVar('${esc(h)}')">${esc(h)}</button>`
+  ).join('');
+  updateMsgPreview();
+}
+
+function insertVar(colName) {
+  const ta  = document.getElementById('msgText');
+  const pos = ta.selectionStart;
+  const val = ta.value;
+  ta.value = val.slice(0, pos) + `{{${colName}}}` + val.slice(ta.selectionEnd);
+  ta.selectionStart = ta.selectionEnd = pos + colName.length + 4;
+  ta.focus();
+  updateSendBtn();
+  updateMsgPreview();
+}
+
+function updateMsgPreview() {
+  const previewEl = document.getElementById('msgPreview');
+  if (!previewEl) return;
+  const firstImported = importedContacts[0];
+  if (!firstImported?.rowData) { previewEl.textContent = '—'; return; }
+  const template = document.getElementById('msgText').value;
+  if (!template.trim()) { previewEl.textContent = '—'; return; }
+  const preview = template.replace(/\{\{([^}]+)\}\}/g, (_, key) => {
+    const val = firstImported.rowData[key.trim()];
+    return val !== undefined
+      ? `[${val}]`
+      : `{{${key.trim()}}}`;
+  });
+  previewEl.textContent = preview;
 }
 
 // ── Import Planilha ──
@@ -936,12 +993,12 @@ async function confirmImport() {
 
   if (!data.ok) { alert('Erro: ' + data.error); return; }
 
-  // Remove importados anteriores e adiciona os novos
   importedContacts = data.contacts;
-  // Seleciona todos automaticamente
+  sheetHeaders     = data.headers || [];
   importedContacts.forEach(c => selectedIds.add(c.id));
   renderList();
   updateSendBtn();
+  updateVarsBar();
   closeImportModal();
 }
 </script>

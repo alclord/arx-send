@@ -319,7 +319,7 @@ app.post('/api/:sessionId/send', sessionMiddleware, async (req, res) => {
   if (sess.status !== 'ready')  return res.status(400).json({ error: 'WhatsApp não conectado' });
   if (sess.isSending)           return res.status(400).json({ error: 'Envio já em andamento' });
 
-  const { contactIds, message, filename, delayMs } = req.body;
+  const { contactIds, message, filename, delayMs, contactsData } = req.body;
   if (!contactIds?.length)           return res.status(400).json({ error: 'Nenhum contato selecionado' });
   if (!message?.trim() && !filename) return res.status(400).json({ error: 'Mensagem ou arquivo obrigatório' });
 
@@ -347,13 +347,19 @@ app.post('/api/:sessionId/send', sessionMiddleware, async (req, res) => {
 
     emit(sid, 'send_progress', { index: i, total, name, status: 'sending' });
 
+    // Personalizar mensagem com variáveis da planilha
+    const rowData   = contactsData?.[contactIds[i]] || {};
+    const finalMsg  = message?.trim()
+      ? message.trim().replace(/\{\{([^}]+)\}\}/g, (_, key) => rowData[key.trim()] ?? `{{${key.trim()}}}`)
+      : '';
+
     const sendTo = async (id) => {
-      if (media && message?.trim()) {
-        await sess.client.sendMessage(id, media, { caption: message.trim() });
+      if (media && finalMsg) {
+        await sess.client.sendMessage(id, media, { caption: finalMsg });
       } else if (media) {
         await sess.client.sendMessage(id, media);
       } else {
-        await sess.client.sendMessage(id, message.trim());
+        await sess.client.sendMessage(id, finalMsg);
       }
     };
 
@@ -434,17 +440,21 @@ app.post('/api/:sessionId/extract-phones', sessionMiddleware, (req, res) => {
     const wb = XLSX.readFile(filePath);
     const ws = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-    const colIdx = parseInt(column);
+    const headers = rows[0].map(String);
+    const colIdx  = parseInt(column);
     const nameIdx = nameColumn !== undefined && nameColumn !== '' ? parseInt(nameColumn) : -1;
     const contacts = [];
     for (let i = 1; i < rows.length; i++) {
       const phone = normalizePhone(rows[i][colIdx]);
       if (!phone) continue;
       const name = nameIdx >= 0 ? String(rows[i][nameIdx] || phone) : phone;
-      contacts.push({ id: phone, name, isGroup: false, imported: true });
+      // Guardar todos os dados da linha como rowData { "Nome Coluna": "valor" }
+      const rowData = {};
+      headers.forEach((h, idx) => { rowData[h] = String(rows[i][idx] ?? ''); });
+      contacts.push({ id: phone, name, isGroup: false, imported: true, rowData });
     }
     try { fs.unlinkSync(filePath); } catch (_) {}
-    res.json({ ok: true, contacts });
+    res.json({ ok: true, contacts, headers });
   } catch (e) {
     res.status(400).json({ error: 'Erro: ' + e.message });
   }
