@@ -420,7 +420,7 @@ app.post('/api/:sessionId/parse-sheet', sessionMiddleware, upload.single('file')
   try {
     const wb = XLSX.readFile(req.file.path);
     const ws = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
     if (!rows.length) { fs.unlinkSync(req.file.path); return res.status(400).json({ error: 'Planilha vazia' }); }
     const headers = rows[0].map(String);
     const preview = rows.slice(1, 4).map(r => headers.map((_, i) => String(r[i] ?? '')));
@@ -439,7 +439,7 @@ app.post('/api/:sessionId/extract-phones', sessionMiddleware, (req, res) => {
   try {
     const wb = XLSX.readFile(filePath);
     const ws = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
     const headers = rows[0].map(String);
     const colIdx  = parseInt(column);
     const nameIdx = nameColumn !== undefined && nameColumn !== '' ? parseInt(nameColumn) : -1;
