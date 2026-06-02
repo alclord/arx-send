@@ -191,6 +191,7 @@
     .log-done{color:var(--accent)}.log-error{color:var(--red)}.log-sending{color:var(--yellow)}
     .warning-box{background:rgba(250,166,26,.06);border:1px solid rgba(250,166,26,.18);border-radius:var(--radius);padding:10px 14px;font-size:11px;color:#e6c07b;line-height:1.6}
     .actions{display:flex;gap:8px;margin-top:auto;padding-top:8px}
+    .send-sticky{display:flex;gap:8px;position:sticky;top:0;z-index:10;background:var(--bg);padding:4px 0 12px;margin-bottom:4px;border-bottom:1px solid var(--border)}
     .btn-primary{flex:1;padding:13px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 4px 20px rgba(37,211,102,.2)}
     .btn-primary:hover{background:#1fc25c;transform:translateY(-1px);box-shadow:0 6px 24px rgba(37,211,102,.3)}
     .btn-primary:disabled{background:var(--surface2);color:var(--muted);box-shadow:none;transform:none;cursor:not-allowed}
@@ -377,6 +378,10 @@
     </div>
 
     <div class="tab-content" id="tab-send">
+      <div class="send-sticky">
+        <button class="btn-primary" id="sendBtn" onclick="startSend()" disabled>🚀 Iniciar Disparo</button>
+        <button class="btn-stop"    id="stopBtn" onclick="stopSend()">⏹ Parar</button>
+      </div>
       <div class="summary-box">
         <div class="summary-row"><span>Destinatários</span><span class="accent" id="sumContacts">0</span></div>
         <div class="summary-row"><span>Intervalo</span><span id="sumDelay">3s</span></div>
@@ -390,10 +395,6 @@
         </div>
         <div class="progress-bar-wrap"><div class="progress-bar" id="progBar"></div></div>
         <div class="progress-log" id="progLog"></div>
-      </div>
-      <div class="actions">
-        <button class="btn-primary" id="sendBtn" onclick="startSend()" disabled>🚀 Iniciar Disparo</button>
-        <button class="btn-stop"    id="stopBtn" onclick="stopSend()">⏹ Parar</button>
       </div>
     </div>
   </div>
