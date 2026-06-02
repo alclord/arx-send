@@ -15,7 +15,10 @@ const io = new Server(server);
 const PORT = process.env.PORT || 3000;
 
 process.on('uncaughtException', (err) => {
-  console.error('Erro não tratado (ignorado):', err.message);
+  console.error('Erro não tratado:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('Promise rejeitada sem tratamento:', reason);
 });
 
 app.use(express.json());
@@ -37,12 +40,42 @@ const sessionDir = process.platform === 'win32'
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 });
 
+// Remove uploads com mais de 2 horas que não foram usados em nenhum envio
+function cleanOrphanedUploads() {
+  try {
+    const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+    fs.readdirSync(uploadsDir).forEach(f => {
+      try {
+        const fp = path.join(uploadsDir, f);
+        if (fs.statSync(fp).mtimeMs < cutoff) fs.unlinkSync(fp);
+      } catch (_) {}
+    });
+  } catch (_) {}
+}
+cleanOrphanedUploads();
+setInterval(cleanOrphanedUploads, 60 * 60 * 1000);
+
 // ── Multer ──
+const ALLOWED_UPLOAD_EXTS = new Set([
+  '.jpg','.jpeg','.png','.gif','.webp','.bmp',
+  '.mp4','.mov','.avi','.mkv','.3gp',
+  '.mp3','.ogg','.wav','.aac','.m4a',
+  '.pdf','.doc','.docx','.xls','.xlsx','.ppt','.pptx','.zip','.txt'
+]);
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadsDir),
-  filename:    (req, file, cb) => cb(null, Date.now() + '_' + file.originalname)
+  filename:    (req, file, cb) => cb(null, Date.now() + '_' + path.basename(file.originalname))
 });
-const upload = multer({ storage, limits: { fileSize: 64 * 1024 * 1024 } });
+const upload = multer({
+  storage,
+  limits: { fileSize: 64 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (ALLOWED_UPLOAD_EXTS.has(ext)) return cb(null, true);
+    cb(new Error(`Tipo de arquivo não permitido: ${ext}`));
+  }
+});
 
 // ── Sessões ──
 // sessions[id] = { id, client, status, contacts, isSending, stopRequested }
@@ -66,11 +99,11 @@ function getSession(id) {
 function setWatchdog(sessionId, ms = 180000) {
   const sess = getSession(sessionId);
   clearTimeout(sess.watchdog);
-  sess.watchdog = setTimeout(async () => {
+  sess.watchdog = setTimeout(() => {
     if (sess.status === 'connecting') {
       console.log(`[${sessionId}] Watchdog: travado em connecting — reconectando...`);
       emit(sessionId, 'status', { status: 'connecting', message: 'Reconectando automaticamente...' });
-      await connectSession(sessionId);
+      connectSession(sessionId).catch(err => console.error(`[${sessionId}] Watchdog erro ao reconectar:`, err));
     }
   }, ms);
 }
@@ -370,68 +403,72 @@ app.post('/api/:sessionId/send', sessionMiddleware, async (req, res) => {
 
   emit(sid, 'send_start', { total });
 
-  let media = null;
-  if (filename) {
-    const filePath = path.join(uploadsDir, filename);
-    if (fs.existsSync(filePath)) media = MessageMedia.fromFilePath(filePath);
-  }
-
-  for (let i = 0; i < contactIds.length; i++) {
-    if (sess.stopRequested) { emit(sid, 'send_stopped', { index: i, total }); break; }
-
-    const contact = sess.contacts.find(c => c.id === contactIds[i]);
-    const name    = contact?.name || contactIds[i];
-
-    emit(sid, 'send_progress', { index: i, total, name, status: 'sending' });
-
-    // Personalizar mensagem com variáveis da planilha
-    const rowData   = contactsData?.[contactIds[i]] || {};
-    const finalMsg  = message?.trim()
-      ? message.trim().replace(/\{\{([^}]+)\}\}/g, (_, key) => rowData[key.trim()] ?? `{{${key.trim()}}}`)
-      : '';
-
-    const sendTo = async (id) => {
-      if (media && finalMsg) {
-        await sess.client.sendMessage(id, media, { caption: finalMsg });
-      } else if (media) {
-        await sess.client.sendMessage(id, media);
-      } else {
-        await sess.client.sendMessage(id, finalMsg);
-      }
-    };
-
-    let sent = false;
-    try {
-      await sendTo(contactIds[i]);
-      sent = true;
-    } catch (err) {
-      // Se falhou com erro de LID, tenta sem o nono dígito
-      const isLidError = err.message.includes('LID') || err.message.includes('lid');
-      const altId = isLidError ? removeNinthDigit(contactIds[i]) : null;
-      if (altId) {
-        try {
-          await sendTo(altId);
-          sent = true;
-        } catch (err2) {
-          console.error(`[${sid}] Erro ao enviar para ${name}:`, err2.message);
-          emit(sid, 'send_progress', { index: i, total, name, status: 'error', error: err2.message });
-        }
-      } else {
-        console.error(`[${sid}] Erro ao enviar para ${name}:`, err.message);
-        emit(sid, 'send_progress', { index: i, total, name, status: 'error', error: err.message });
-      }
+  try {
+    let media = null;
+    if (filename) {
+      const safeFilename = path.basename(filename);
+      const filePath = path.join(uploadsDir, safeFilename);
+      if (fs.existsSync(filePath)) media = MessageMedia.fromFilePath(filePath);
     }
-    if (sent) emit(sid, 'send_progress', { index: i, total, name, status: 'done' });
 
-    if (i < contactIds.length - 1 && !sess.stopRequested) await sleep(delay);
+    for (let i = 0; i < contactIds.length; i++) {
+      if (sess.stopRequested) { emit(sid, 'send_stopped', { index: i, total }); break; }
+
+      const contact = sess.contacts.find(c => c.id === contactIds[i]);
+      const name    = contact?.name || contactIds[i];
+
+      emit(sid, 'send_progress', { index: i, total, name, status: 'sending' });
+
+      // Personalizar mensagem com variáveis da planilha
+      const rowData   = contactsData?.[contactIds[i]] || {};
+      const finalMsg  = message?.trim()
+        ? message.trim().replace(/\{\{([^}]+)\}\}/g, (_, key) => rowData[key.trim()] ?? `{{${key.trim()}}}`)
+        : '';
+
+      const sendTo = async (id) => {
+        if (media && finalMsg) {
+          await sess.client.sendMessage(id, media, { caption: finalMsg });
+        } else if (media) {
+          await sess.client.sendMessage(id, media);
+        } else {
+          await sess.client.sendMessage(id, finalMsg);
+        }
+      };
+
+      let sent = false;
+      try {
+        await sendTo(contactIds[i]);
+        sent = true;
+      } catch (err) {
+        // Se falhou com erro de LID, tenta sem o nono dígito
+        const isLidError = err.message.includes('LID') || err.message.includes('lid');
+        const altId = isLidError ? removeNinthDigit(contactIds[i]) : null;
+        if (altId) {
+          try {
+            await sendTo(altId);
+            sent = true;
+          } catch (err2) {
+            console.error(`[${sid}] Erro ao enviar para ${name}:`, err2.message);
+            emit(sid, 'send_progress', { index: i, total, name, status: 'error', error: err2.message });
+          }
+        } else {
+          console.error(`[${sid}] Erro ao enviar para ${name}:`, err.message);
+          emit(sid, 'send_progress', { index: i, total, name, status: 'error', error: err.message });
+        }
+      }
+      if (sent) emit(sid, 'send_progress', { index: i, total, name, status: 'done' });
+
+      if (i < contactIds.length - 1 && !sess.stopRequested) await sleep(delay);
+    }
+
+    if (filename) {
+      try { fs.unlinkSync(path.join(uploadsDir, path.basename(filename))); } catch (_) {}
+    }
+
+    emit(sid, 'send_done', { total });
+  } finally {
+    sess.isSending = false;
   }
-
-  if (filename) {
-    try { fs.unlinkSync(path.join(uploadsDir, filename)); } catch (_) {}
-  }
-
-  sess.isSending = false;
-  emit(sid, 'send_done', { total });
 });
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -471,7 +508,7 @@ app.post('/api/:sessionId/parse-sheet', sessionMiddleware, upload.single('file')
 app.post('/api/:sessionId/extract-phones', sessionMiddleware, (req, res) => {
   const { filename, column, nameColumn } = req.body;
   if (!filename) return res.status(400).json({ error: 'Arquivo não informado' });
-  const filePath = path.join(uploadsDir, filename);
+  const filePath = path.join(uploadsDir, path.basename(filename));
   if (!fs.existsSync(filePath)) return res.status(400).json({ error: 'Arquivo não encontrado' });
   try {
     const wb = XLSX.readFile(filePath);

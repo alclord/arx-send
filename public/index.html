@@ -721,7 +721,8 @@ function toggleContact(id) {
 
 function selectAll() {
   const q = document.getElementById('searchInput').value.toLowerCase().trim();
-  contacts.filter(c => {
+  const allContacts = [...importedContacts, ...contacts];
+  allContacts.filter(c => {
     if (currentFilter === 'people' && c.isGroup)  return false;
     if (currentFilter === 'groups' && !c.isGroup) return false;
     if (q && !c.name.toLowerCase().includes(q))   return false;
@@ -822,17 +823,27 @@ async function startSend() {
   const contactsData = {};
   importedContacts.forEach(c => { if (c.rowData) contactsData[c.id] = c.rowData; });
 
-  await api('/send', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contactIds:   [...selectedIds],
-      message:      sendMode === 'file' ? '' : document.getElementById('msgText').value,
-      filename:     uploadedFile?.filename || null,
-      delayMs:      selectedDelay,
-      contactsData: Object.keys(contactsData).length ? contactsData : undefined
-    })
-  });
+  try {
+    const res = await api('/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contactIds:   [...selectedIds],
+        message:      sendMode === 'file' ? '' : document.getElementById('msgText').value,
+        filename:     uploadedFile?.filename || null,
+        delayMs:      selectedDelay,
+        contactsData: Object.keys(contactsData).length ? contactsData : undefined
+      })
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      document.getElementById('progLabel').textContent = '❌ ' + (data.error || 'Erro ao iniciar disparo');
+      document.getElementById('progressBox').classList.add('show');
+    }
+  } catch (e) {
+    document.getElementById('progLabel').textContent = '❌ Erro de comunicação: ' + e.message;
+    document.getElementById('progressBox').classList.add('show');
+  }
 }
 
 async function stopSend() { await api('/stop', { method: 'POST' }); }
