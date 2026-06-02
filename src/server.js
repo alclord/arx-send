@@ -6,6 +6,7 @@ const multer = require('multer');
 const qrcode = require('qrcode');
 const path = require('path');
 const fs = require('fs');
+const XLSX = require('xlsx');
 
 const app = express();
 const server = http.createServer(app);
@@ -368,6 +369,57 @@ app.post('/api/:sessionId/send', sessionMiddleware, async (req, res) => {
 });
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ── Normalizar telefone ──
+function normalizePhone(raw) {
+  let digits = String(raw).replace(/\D/g, '').replace(/^0+/, '');
+  if (!digits) return null;
+  if (!digits.startsWith('55')) digits = '55' + digits;
+  if (digits.length < 12 || digits.length > 13) return null;
+  return digits + '@c.us';
+}
+
+// ── Rotas de importação de planilha ──
+app.post('/api/:sessionId/parse-sheet', sessionMiddleware, upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+  try {
+    const wb = XLSX.readFile(req.file.path);
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    if (!rows.length) { fs.unlinkSync(req.file.path); return res.status(400).json({ error: 'Planilha vazia' }); }
+    const headers = rows[0].map(String);
+    const preview = rows.slice(1, 4).map(r => headers.map((_, i) => String(r[i] ?? '')));
+    res.json({ ok: true, headers, preview, filename: req.file.filename });
+  } catch (e) {
+    try { fs.unlinkSync(req.file.path); } catch (_) {}
+    res.status(400).json({ error: 'Erro ao ler planilha: ' + e.message });
+  }
+});
+
+app.post('/api/:sessionId/extract-phones', sessionMiddleware, (req, res) => {
+  const { filename, column, nameColumn } = req.body;
+  if (!filename) return res.status(400).json({ error: 'Arquivo não informado' });
+  const filePath = path.join(uploadsDir, filename);
+  if (!fs.existsSync(filePath)) return res.status(400).json({ error: 'Arquivo não encontrado' });
+  try {
+    const wb = XLSX.readFile(filePath);
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    const colIdx = parseInt(column);
+    const nameIdx = nameColumn !== undefined && nameColumn !== '' ? parseInt(nameColumn) : -1;
+    const contacts = [];
+    for (let i = 1; i < rows.length; i++) {
+      const phone = normalizePhone(rows[i][colIdx]);
+      if (!phone) continue;
+      const name = nameIdx >= 0 ? String(rows[i][nameIdx] || phone) : phone;
+      contacts.push({ id: phone, name, isGroup: false, imported: true });
+    }
+    try { fs.unlinkSync(filePath); } catch (_) {}
+    res.json({ ok: true, contacts });
+  } catch (e) {
+    res.status(400).json({ error: 'Erro: ' + e.message });
+  }
+});
 
 server.listen(PORT, () => {
   console.log(`\n🚀 WA Bulk Sender rodando em http://localhost:${PORT}\n`);

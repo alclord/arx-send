@@ -197,6 +197,36 @@
     .btn-stop{flex:1;padding:13px;background:rgba(240,71,71,.1);border:1px solid rgba(240,71,71,.3);color:var(--red);border-radius:var(--radius);font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;display:none;transition:all .2s}
     .btn-stop:hover{background:rgba(240,71,71,.2)}
 
+    /* ── IMPORT MODAL ── */
+    #importModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center}
+    #importModal.show{display:flex}
+    .import-card{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:28px 28px 24px;width:90%;max-width:480px}
+    .import-card h2{font-family:'Syne',sans-serif;font-size:17px;font-weight:800;margin-bottom:4px}
+    .import-card .import-sub{font-size:12px;color:var(--muted);margin-bottom:20px}
+    .import-step{display:none}.import-step.active{display:block}
+    .import-file-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:28px;text-align:center;cursor:pointer;transition:all .2s;position:relative}
+    .import-file-zone:hover,.import-file-zone.drag{border-color:var(--accent);background:var(--glow)}
+    .import-file-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+    .import-file-zone .icon{font-size:32px;margin-bottom:8px}
+    .import-file-zone p{font-size:12px;color:var(--muted);margin:0}
+    .import-file-zone strong{color:var(--text)}
+    .import-col-row{display:flex;gap:10px;margin-bottom:16px}
+    .import-col-row>div{flex:1}
+    .import-select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none}
+    .import-select:focus{border-color:var(--accent)}
+    .import-preview{background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:16px}
+    .import-preview table{width:100%;border-collapse:collapse;font-size:11px}
+    .import-preview th{background:var(--border);color:var(--muted);font-weight:600;padding:6px 10px;text-align:left;font-family:'Syne',sans-serif;font-size:10px;letter-spacing:.5px}
+    .import-preview td{padding:5px 10px;border-top:1px solid var(--border);color:var(--text)}
+    .import-result{background:rgba(37,211,102,.08);border:1px solid rgba(37,211,102,.2);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--accent);margin-bottom:16px;text-align:center;font-family:'Syne',sans-serif;font-weight:700}
+    .import-actions{display:flex;gap:8px}
+    .btn-import-back{flex:1;padding:11px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .15s}
+    .btn-import-back:hover{border-color:var(--accent);color:var(--accent)}
+    .btn-import-ok{flex:2;padding:11px;background:var(--accent);border:none;border-radius:10px;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:#fff;cursor:pointer;transition:all .15s}
+    .btn-import-ok:hover{background:#1fc25c}
+    .btn-import-ok:disabled{background:var(--surface2);color:var(--muted);cursor:not-allowed}
+    .badge-imported{font-size:9px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;background:rgba(99,179,237,.1);color:#63b3ed;border:1px solid rgba(99,179,237,.2);border-radius:4px;padding:2px 5px;flex-shrink:0}
+
     /* QR modal */
     #qrModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center}
     #qrModal.show{display:flex}
@@ -263,6 +293,7 @@
       <span class="panel-title">Contatos</span>
       <div class="sel-info">
         <span class="sel-badge" id="selBadge">0</span>
+        <button class="icon-btn" onclick="openImportModal()" title="Importar planilha">📊</button>
         <button class="icon-btn" onclick="reloadContacts()" title="Recarregar">↻</button>
       </div>
     </div>
@@ -368,6 +399,44 @@
   </div>
 </div>
 
+<!-- IMPORT MODAL -->
+<div id="importModal">
+  <div class="import-card">
+    <button class="qr-close" onclick="closeImportModal()">×</button>
+    <h2>📊 Importar Planilha</h2>
+    <p class="import-sub">Importe contatos de um arquivo Excel ou CSV</p>
+
+    <!-- Step 1: upload -->
+    <div class="import-step active" id="importStep1">
+      <div class="import-file-zone" id="importFileZone">
+        <input type="file" id="importFileInput" accept=".xlsx,.xls,.csv"/>
+        <div class="icon">📂</div>
+        <p><strong>Clique ou arraste</strong> um arquivo aqui<br>.xlsx, .xls ou .csv</p>
+      </div>
+      <div id="importFileError" style="font-size:12px;color:var(--red);margin-top:8px;min-height:16px"></div>
+    </div>
+
+    <!-- Step 2: column selector -->
+    <div class="import-step" id="importStep2">
+      <div class="import-col-row">
+        <div>
+          <div class="field-label" style="margin-bottom:6px">Coluna dos telefones *</div>
+          <select class="import-select" id="importPhoneCol"></select>
+        </div>
+        <div>
+          <div class="field-label" style="margin-bottom:6px">Coluna dos nomes (opcional)</div>
+          <select class="import-select" id="importNameCol"><option value="">— nenhuma —</option></select>
+        </div>
+      </div>
+      <div class="import-preview" id="importPreview"></div>
+      <div class="import-actions">
+        <button class="btn-import-back" onclick="backImportStep()">← Voltar</button>
+        <button class="btn-import-ok" id="importOkBtn" onclick="confirmImport()">Importar contatos</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- QR MODAL -->
 <div id="qrModal">
   <div class="qr-card">
@@ -439,14 +508,16 @@ socket.on('session_joined', ({ sessionId: id }) => {
 });
 
 // ── Estado ──
-let contacts     = [];
-let selectedIds  = new Set();
-let currentFilter = 'all';
-let sendMode     = 'text';
-let selectedDelay = 3000;
-let uploadedFile = null;
-let isSending    = false;
-let waStatus     = 'disconnected';
+let contacts        = [];
+let importedContacts = [];
+let selectedIds     = new Set();
+let currentFilter   = 'all';
+let sendMode        = 'text';
+let selectedDelay   = 3000;
+let uploadedFile    = null;
+let isSending       = false;
+let waStatus        = 'disconnected';
+let importFilename  = null;
 
 // ── Socket events ──
 socket.on('status', ({ status, message }) => {
@@ -600,7 +671,8 @@ function renderList() {
     list.innerHTML = `<div class="empty-state"><div class="icon">${waStatus==='ready'?'📭':'📱'}</div><p>${waStatus==='ready'?'Nenhum contato carregado':'Conecte seu WhatsApp<br>para ver seus contatos'}</p></div>`;
     return;
   }
-  const filtered = contacts.filter(c => {
+  const allContacts = [...importedContacts, ...contacts];
+  const filtered = allContacts.filter(c => {
     if (currentFilter === 'people' && c.isGroup)  return false;
     if (currentFilter === 'groups' && !c.isGroup) return false;
     if (q && !c.name.toLowerCase().includes(q))   return false;
@@ -613,14 +685,16 @@ function renderList() {
   }
   list.innerHTML = filtered.map(c => {
     const sel = selectedIds.has(c.id);
+    const badge = c.imported ? '<span class="badge-imported">Planilha</span>'
+                : c.isGroup  ? '<span class="badge-group">Grupo</span>' : '';
     return `<div class="contact-item${sel?' selected':''}" onclick="toggleContact('${esc(c.id)}')">
       <div class="cb"><svg viewBox="0 0 12 10" fill="none"><polyline points="1,5 4,8 11,1"/></svg></div>
       <div class="avatar">${c.name.charAt(0).toUpperCase()}</div>
       <div class="contact-info">
         <div class="contact-name">${esc(c.name)}</div>
-        ${c.unread?`<div class="contact-sub">${c.unread} não lida(s)</div>`:''}
+        ${c.unread?`<div class="contact-sub">${c.unread} não lida(s)</div>`:c.imported?`<div class="contact-sub">${c.id.replace('@c.us','')}</div>`:''}
       </div>
-      ${c.isGroup?'<span class="badge-group">Grupo</span>':''}
+      ${badge}
     </div>`;
   }).join('');
   document.getElementById('selBadge').textContent = selectedIds.size;
@@ -761,6 +835,114 @@ function formatBytes(b) {
 }
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ── Import Planilha ──
+function openImportModal() {
+  importFilename = null;
+  document.getElementById('importFileInput').value = '';
+  document.getElementById('importFileError').textContent = '';
+  document.getElementById('importFileZone').classList.remove('drag');
+  showImportStep(1);
+  document.getElementById('importModal').classList.add('show');
+}
+
+function closeImportModal() {
+  document.getElementById('importModal').classList.remove('show');
+}
+
+function showImportStep(n) {
+  document.querySelectorAll('.import-step').forEach((el, i) => {
+    el.classList.toggle('active', i + 1 === n);
+  });
+}
+
+function backImportStep() { showImportStep(1); }
+
+// Drag & drop na zona de import
+const importFileZone  = document.getElementById('importFileZone');
+const importFileInput = document.getElementById('importFileInput');
+importFileZone.addEventListener('dragover',  e => { e.preventDefault(); importFileZone.classList.add('drag'); });
+importFileZone.addEventListener('dragleave', () => importFileZone.classList.remove('drag'));
+importFileZone.addEventListener('drop', e => {
+  e.preventDefault(); importFileZone.classList.remove('drag');
+  if (e.dataTransfer.files[0]) handleImportFile(e.dataTransfer.files[0]);
+});
+importFileInput.addEventListener('change', () => {
+  if (importFileInput.files[0]) handleImportFile(importFileInput.files[0]);
+});
+
+async function handleImportFile(file) {
+  const allowed = ['.xlsx', '.xls', '.csv'];
+  const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+  if (!allowed.includes(ext)) {
+    document.getElementById('importFileError').textContent = 'Formato inválido. Use .xlsx, .xls ou .csv';
+    return;
+  }
+  document.getElementById('importFileError').textContent = 'Lendo arquivo...';
+  const fd = new FormData();
+  fd.append('file', file);
+  const r = await api('/parse-sheet', { method: 'POST', body: fd });
+  const data = await r.json();
+  if (!data.ok) {
+    document.getElementById('importFileError').textContent = data.error || 'Erro ao ler arquivo';
+    return;
+  }
+  importFilename = data.filename;
+  buildImportStep2(data.headers, data.preview);
+  showImportStep(2);
+}
+
+function buildImportStep2(headers, preview) {
+  const phoneEl = document.getElementById('importPhoneCol');
+  const nameEl  = document.getElementById('importNameCol');
+  phoneEl.innerHTML = headers.map((h, i) => `<option value="${i}">${h || 'Coluna ' + (i+1)}</option>`).join('');
+  nameEl.innerHTML  = '<option value="">— nenhuma —</option>' +
+    headers.map((h, i) => `<option value="${i}">${h || 'Coluna ' + (i+1)}</option>`).join('');
+
+  // Tenta adivinhar coluna de telefone
+  const guess = headers.findIndex(h => /tel|fone|celular|whatsapp|number|phone/i.test(h));
+  if (guess >= 0) phoneEl.value = guess;
+
+  // Tenta adivinhar coluna de nome
+  const guessName = headers.findIndex(h => /nome|name|cliente|contato/i.test(h));
+  if (guessName >= 0) nameEl.value = guessName;
+
+  // Preview
+  const previewHtml = `<table>
+    <tr>${headers.map(h => `<th>${esc(h || '—')}</th>`).join('')}</tr>
+    ${preview.map(row => `<tr>${row.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`).join('')}
+  </table>`;
+  document.getElementById('importPreview').innerHTML = previewHtml;
+}
+
+async function confirmImport() {
+  if (!importFilename) return;
+  const phoneCol = document.getElementById('importPhoneCol').value;
+  const nameCol  = document.getElementById('importNameCol').value;
+  const btn = document.getElementById('importOkBtn');
+  btn.disabled = true;
+  btn.textContent = 'Importando...';
+
+  const fd = new FormData();
+  fd.append('filename', importFilename);
+  fd.append('column', phoneCol);
+  if (nameCol !== '') fd.append('nameColumn', nameCol);
+
+  const r = await api('/extract-phones', { method: 'POST', body: fd });
+  const data = await r.json();
+  btn.disabled = false;
+  btn.textContent = 'Importar contatos';
+
+  if (!data.ok) { alert('Erro: ' + data.error); return; }
+
+  // Remove importados anteriores e adiciona os novos
+  importedContacts = data.contacts;
+  // Seleciona todos automaticamente
+  importedContacts.forEach(c => selectedIds.add(c.id));
+  renderList();
+  updateSendBtn();
+  closeImportModal();
 }
 </script>
 </body>
