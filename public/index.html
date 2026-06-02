@@ -924,12 +924,11 @@ async function confirmImport() {
   btn.disabled = true;
   btn.textContent = 'Importando...';
 
-  const fd = new FormData();
-  fd.append('filename', importFilename);
-  fd.append('column', phoneCol);
-  if (nameCol !== '') fd.append('nameColumn', nameCol);
-
-  const r = await api('/extract-phones', { method: 'POST', body: fd });
+  const r = await api('/extract-phones', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename: importFilename, column: phoneCol, nameColumn: nameCol || '' })
+  });
   const data = await r.json();
   btn.disabled = false;
   btn.textContent = 'Importar contatos';
