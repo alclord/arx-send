@@ -6,6 +6,7 @@ const multer = require('multer');
 const qrcode = require('qrcode');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const XLSX = require('xlsx');
 
 const app = express();
@@ -24,7 +25,10 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 // ── Diretórios ──
 const uploadsDir = path.join(__dirname, '../uploads');
 const cacheDir   = path.join(__dirname, '../cache');
-const sessionDir = path.join(__dirname, '../.wa_sessions');
+// Sessões fora do OneDrive/iCloud para evitar conflito de sync com arquivos do Chrome
+const sessionDir = process.platform === 'win32'
+  ? path.join(process.env.LOCALAPPDATA || os.tmpdir(), 'arx-send', 'sessions')
+  : path.join(__dirname, '../.wa_sessions');
 [uploadsDir, cacheDir, sessionDir].forEach(d => {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 });
