@@ -53,9 +53,28 @@ function getSession(id) {
       contacts:      loadCachedContacts(id),
       isSending:     false,
       stopRequested: false,
+      watchdog:      null,
     };
   }
   return sessions[id];
+}
+
+function setWatchdog(sessionId, ms = 180000) {
+  const sess = getSession(sessionId);
+  clearTimeout(sess.watchdog);
+  sess.watchdog = setTimeout(async () => {
+    if (sess.status === 'connecting') {
+      console.log(`[${sessionId}] Watchdog: travado em connecting — reconectando...`);
+      emit(sessionId, 'status', { status: 'connecting', message: 'Reconectando automaticamente...' });
+      await connectSession(sessionId);
+    }
+  }, ms);
+}
+
+function clearWatchdog(sessionId) {
+  const sess = getSession(sessionId);
+  clearTimeout(sess.watchdog);
+  sess.watchdog = null;
 }
 
 function emit(sessionId, event, data) {
@@ -148,14 +167,17 @@ async function connectSession(sessionId) {
   sess.client.on('loading_screen', (percent) => {
     sess.status = 'connecting';
     emit(sessionId, 'status', { status: 'connecting', message: `Carregando... ${percent}%` });
+    setWatchdog(sessionId, 120000); // 2 min para sair do loading
   });
 
   sess.client.on('authenticated', () => {
     sess.status = 'connecting';
     emit(sessionId, 'status', { status: 'connecting', message: 'Autenticado! Inicializando...' });
+    setWatchdog(sessionId, 120000);
   });
 
   sess.client.on('ready', async () => {
+    clearWatchdog(sessionId);
     sess.status = 'ready';
     emit(sessionId, 'status', { status: 'ready', message: 'Conectado! Aguardando sincronização...' });
 
@@ -170,6 +192,7 @@ async function connectSession(sessionId) {
   });
 
   sess.client.on('disconnected', (reason) => {
+    clearWatchdog(sessionId);
     sess.status   = 'disconnected';
     sess.contacts = [];
     emit(sessionId, 'status',   { status: 'disconnected', message: `Desconectado: ${reason}` });
