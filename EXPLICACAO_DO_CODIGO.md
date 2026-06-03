@@ -41,7 +41,7 @@ O ARX Send é composto por duas partes que conversam entre si em tempo real:
 | **Socket.IO** | Comunicação em tempo real entre servidor e navegador (sem precisar recarregar a página) |
 | **whatsapp-web.js** | Biblioteca que automatiza o WhatsApp Web |
 | **Puppeteer** | Controla o Chrome via código (abre páginas, clica, lê dados) |
-| **Multer** | Gerencia uploads de arquivos (imagens, PDFs, planilhas) |
+| **Multer** | Gerencia uploads de arquivos com validação de tipo e tamanho |
 | **XLSX** | Lê arquivos Excel (.xlsx) e CSV |
 | **pkg** | Empacota tudo em um único .exe para distribuição |
 
@@ -75,11 +75,17 @@ const PORT = process.env.PORT || 3000;
 
 ```javascript
 process.on('uncaughtException', (err) => {
-  console.error('Erro não tratado (ignorado):', err.message);
+  console.error('Erro não tratado:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('Promise rejeitada sem tratamento:', reason);
 });
 ```
 
-Captura erros inesperados do Node.js e os ignora em vez de fechar o servidor. Importante porque o Puppeteer às vezes dispara erros assíncronos fora do nosso controle.
+Captura dois tipos de erros inesperados:
+
+- `uncaughtException` — erros síncronos não capturados por nenhum `try/catch`. Logamos o erro completo (com stack trace) em vez de só a mensagem, para facilitar o diagnóstico.
+- `unhandledRejection` — Promises que foram rejeitadas sem um `.catch()`. Em Node.js 15+, uma rejeição não tratada **derruba o processo** por padrão, então registrar um handler aqui evita crashes silenciosos (como o watchdog chamando `connectSession` e o Chrome não encontrado).
 
 ---
 
@@ -98,7 +104,46 @@ const appDataBase = process.pkg
 
 ---
 
-### 3. Sistema de Sessões (Multi-usuário)
+### 3. Upload de Arquivos (Multer)
+
+```javascript
+const ALLOWED_UPLOAD_EXTS = new Set([
+  '.jpg', '.jpeg', '.png', /* ... */ '.pdf', '.docx', '.xlsx', '.zip', '.txt'
+]);
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 64 * 1024 * 1024 },  // 64 MB
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (ALLOWED_UPLOAD_EXTS.has(ext)) return cb(null, true);
+    cb(new Error(`Tipo de arquivo não permitido: ${ext}`));
+  }
+});
+```
+
+O Multer gerencia o recebimento de arquivos enviados pelo navegador. Três controles importantes:
+
+- **`limits.fileSize`** — rejeita arquivos maiores que 64 MB antes mesmo de salvar em disco.
+- **`fileFilter`** — verifica a extensão do arquivo. Se não estiver na lista permitida, rejeita com erro 400. Isso impede o upload de executáveis (`.exe`, `.bat`) ou outros tipos não esperados.
+- **`path.basename(file.originalname)`** — remove qualquer componente de diretório do nome original (`../../etc/passwd` vira `passwd`), evitando que o arquivo seja gravado fora da pasta de uploads.
+
+```javascript
+// Middleware de erro logo após as rotas de upload
+app.use((err, req, res, next) => {
+  if (err?.code === 'LIMIT_FILE_SIZE')
+    return res.status(400).json({ error: 'Arquivo muito grande (máx. 64 MB)' });
+  if (err instanceof multer.MulterError || err?.message?.startsWith('Tipo de arquivo'))
+    return res.status(400).json({ error: err.message });
+  next(err);
+});
+```
+
+Este middleware de 4 parâmetros `(err, req, res, next)` é a forma do Express de capturar erros lançados por middlewares anteriores. Sem ele, o erro do `fileFilter` chegaria ao usuário como um 500 genérico — com ele, retornamos um 400 com mensagem legível.
+
+---
+
+### 4. Sistema de Sessões (Multi-usuário)
 
 ```javascript
 const sessions = {};
@@ -125,15 +170,17 @@ Quando você acessa `sessions["yuri"]`, você tem acesso ao cliente WhatsApp do 
 
 ---
 
-### 4. Watchdog (Vigilante de Conexão)
+### 5. Watchdog (Vigilante de Conexão)
 
 ```javascript
 function setWatchdog(sessionId, ms = 180000) {
   const sess = getSession(sessionId);
   clearTimeout(sess.watchdog);
-  sess.watchdog = setTimeout(async () => {
+  sess.watchdog = setTimeout(() => {
     if (sess.status === 'connecting') {
-      await connectSession(sessionId); // reconecta automaticamente
+      connectSession(sessionId).catch(err =>
+        console.error(`[${sessionId}] Watchdog erro ao reconectar:`, err)
+      );
     }
   }, ms);
 }
@@ -146,9 +193,11 @@ function setWatchdog(sessionId, ms = 180000) {
 3. O timer chama `connectSession()` novamente, reiniciando tudo
 4. Se o WhatsApp carregar normalmente (evento `ready`), cancelamos o timer com `clearTimeout`
 
+> **Por que não usar `async/await` aqui?** O `setTimeout` não consegue capturar erros de uma função `async` passada como callback — uma rejeição viraria um `unhandledRejection` e poderia derrubar o processo. A solução é usar `.catch()` diretamente na Promise retornada por `connectSession()`.
+
 ---
 
-### 5. Cache de Contatos
+### 6. Cache de Contatos
 
 ```javascript
 function saveCachedContacts(sessionId, contacts) {
@@ -169,7 +218,7 @@ Após carregar os contatos do WhatsApp (o que pode demorar), salvamos em um arqu
 
 ---
 
-### 6. Detecção do Chrome
+### 7. Detecção do Chrome
 
 ```javascript
 function getChromiumPath() {
@@ -195,7 +244,7 @@ function getChromiumPath() {
 
 ---
 
-### 7. Conectar Sessão WhatsApp
+### 8. Conectar Sessão WhatsApp
 
 ```javascript
 async function connectSession(sessionId) {
@@ -224,7 +273,67 @@ sess.client.on('disconnected', (reason) => { ... });
 
 ---
 
-### 8. Loop de Envio
+### 9. Proteções de Segurança
+
+Várias camadas de proteção foram adicionadas ao longo do desenvolvimento:
+
+#### Path traversal — `path.basename()`
+
+```javascript
+// ERRADO (vulnerável):
+const filePath = path.join(uploadsDir, filename); // filename pode ser "../../etc/passwd"
+
+// CORRETO:
+const filePath = path.join(uploadsDir, path.basename(filename)); // sempre fica dentro de uploadsDir
+```
+
+`path.basename()` extrai apenas o nome do arquivo, descartando qualquer componente de diretório. Isso impede que um usuário mal-intencionado acesse arquivos fora da pasta de uploads passando caminhos como `../../`.
+
+#### Limite de linhas no XLSX — `sheetRows`
+
+```javascript
+const wb = XLSX.readFile(filePath, { sheetRows: 10001 });
+```
+
+Arquivos `.xlsx` são ZIPs internamente. Um arquivo malicioso pode ter 1 KB no disco mas expandir para centenas de MB de dados. O `sheetRows` faz a biblioteca parar de ler após 10.001 linhas, evitando que o servidor fique sem memória.
+
+#### Limite de contatos por envio
+
+```javascript
+if (contactIds.length > 5000)
+  return res.status(400).json({ error: 'Máximo de 5000 contatos por envio' });
+```
+
+Sem esse limite, um array com dezenas de milhares de IDs travaria o servidor por horas (1.500 ms mínimo por envio × volume = horas bloqueadas).
+
+#### `try/finally` no loop de envio
+
+```javascript
+sess.isSending = true;
+try {
+  // ... todo o loop
+} finally {
+  sess.isSending = false; // executado SEMPRE, mesmo se houver exceção
+}
+```
+
+O bloco `finally` garante que `isSending` sempre volta para `false`, mesmo que uma exceção inesperada interrompa o loop. Sem isso, um erro no meio do envio deixaria a sessão permanentemente travada, impedindo novos disparos até reiniciar o servidor.
+
+#### Limpeza automática de arquivos e sessões
+
+```javascript
+// Uploads sem uso há mais de 2 horas são deletados a cada 1 hora
+setInterval(cleanOrphanedUploads, 60 * 60 * 1000);
+
+// Sessões desconectadas sem cliente ativo são removidas da memória a cada 1 hora
+setInterval(cleanStaleSessions, 60 * 60 * 1000);
+```
+
+Sem essas rotinas, arquivos enviados mas não usados acumulariam no disco indefinidamente, e o objeto `sessions` cresceria na memória para sempre em um servidor com muitos usuários.
+
+---
+
+### 11. Loop de Envio
 
 ```javascript
 for (let i = 0; i < contactIds.length; i++) {
@@ -251,7 +360,7 @@ for (let i = 0; i < contactIds.length; i++) {
 
 ---
 
-### 9. Rotas da API
+### 12. Rotas da API
 
 ```javascript
 app.post('/api/:sessionId/connect', sessionMiddleware, (req, res) => { ... });
@@ -266,7 +375,7 @@ app.post('/api/:sessionId/send',    sessionMiddleware, async (req, res) => { ...
 
 ---
 
-### 10. Socket.IO (Comunicação em Tempo Real)
+### 13. Socket.IO (Comunicação em Tempo Real)
 
 ```javascript
 io.on('connection', (socket) => {
