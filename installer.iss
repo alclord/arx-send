@@ -1,5 +1,5 @@
 #define AppName "ARX Send"
-#define AppVersion "1.0.0"
+#define AppVersion "1.1.1"
 #define AppPublisher "ARX Administradora"
 #define AppExeName "arx-send.exe"
 
