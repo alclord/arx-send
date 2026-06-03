@@ -25,9 +25,12 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
 // Rota de uploads restrita: exige que o arquivo exista dentro do uploadsDir
 app.get('/uploads/:file', (req, res) => {
-  const filePath = path.join(uploadsDir, path.basename(req.params.file));
+  const filename = path.basename(req.params.file);
+  const filePath = path.join(uploadsDir, filename);
   if (!fs.existsSync(filePath)) return res.status(404).end();
-  res.sendFile(filePath);
+  res.sendFile(filename, { root: uploadsDir }, (err) => {
+    if (err && !res.headersSent) res.status(500).end();
+  });
 });
 
 // ── Diretórios ──
