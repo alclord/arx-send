@@ -60,6 +60,16 @@ function cleanOrphanedUploads() {
 cleanOrphanedUploads();
 setInterval(cleanOrphanedUploads, 60 * 60 * 1000);
 
+// Remove sessões desconectadas sem cliente ativo há mais de 1 hora
+function cleanStaleSessions() {
+  for (const [id, sess] of Object.entries(sessions)) {
+    if (sess.status === 'disconnected' && !sess.client && !sess.isSending) {
+      delete sessions[id];
+    }
+  }
+}
+setInterval(cleanStaleSessions, 60 * 60 * 1000);
+
 // ── Multer ──
 const ALLOWED_UPLOAD_EXTS = new Set([
   '.jpg','.jpeg','.png','.gif','.webp','.bmp',
@@ -382,6 +392,15 @@ app.post('/api/:sessionId/upload', sessionMiddleware, upload.single('file'), (re
   });
 });
 
+// Trata erros do multer (fileFilter rejeitou, arquivo muito grande, etc.)
+app.use((err, req, res, next) => {
+  if (err?.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'Arquivo muito grande (máx. 64 MB)' });
+  if (err instanceof multer.MulterError || err?.message?.startsWith('Tipo de arquivo')) {
+    return res.status(400).json({ error: err.message });
+  }
+  next(err);
+});
+
 app.post('/api/:sessionId/stop', sessionMiddleware, (req, res) => {
   req.sess.stopRequested = true;
   res.json({ ok: true });
@@ -517,7 +536,7 @@ app.post('/api/:sessionId/extract-phones', sessionMiddleware, (req, res) => {
   const filePath = path.join(uploadsDir, path.basename(filename));
   if (!fs.existsSync(filePath)) return res.status(400).json({ error: 'Arquivo não encontrado' });
   try {
-    const wb = XLSX.readFile(filePath);
+    const wb = XLSX.readFile(filePath, { sheetRows: 10001 });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
     const headers = rows[0].map(String);
