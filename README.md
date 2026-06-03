@@ -5,22 +5,36 @@ Conecta pelo QR code (igual ao WhatsApp Web) e permite enviar mensagens e arquiv
 
 ## Funcionalidades
 
-- Multi-sessão — várias pessoas podem usar ao mesmo tempo, cada uma com seu próprio WhatsApp
-- QR code para autenticação, igual ao WhatsApp Web
-- Cache de contatos — na reconexão os contatos aparecem instantaneamente
-- Envio de texto, arquivo ou texto + arquivo
-- Filtro e busca de contatos e grupos
-- Intervalo configurável entre envios (proteção contra banimento)
-- Progresso em tempo real via Socket.IO
-- Botão para parar o disparo a qualquer momento
+- **Multi-sessão** — várias pessoas usam ao mesmo tempo, cada uma com seu próprio WhatsApp
+- **QR code** para autenticação, igual ao WhatsApp Web; sessão salva em disco (não precisa escanear toda vez)
+- **Importação de planilha** — importe contatos de arquivos `.xlsx`, `.xls` ou `.csv`
+- **Mensagens personalizadas** — use variáveis `{{NomeColuna}}` que são substituídas pelos dados de cada linha da planilha
+- **Envio de texto, arquivo ou texto + arquivo** (imagens, vídeos, PDFs, documentos, áudio — até 64 MB)
+- **Filtro e busca** de contatos e grupos
+- **Intervalo configurável** entre envios: 2s, 3s, 5s, 8s ou 15s
+- **Progresso em tempo real** via Socket.IO com log por contato
+- **Botão Parar** para interromper o disparo a qualquer momento
+- **Cache de contatos** — na reconexão a lista aparece instantaneamente
+- **Watchdog automático** — reconecta sozinho se o WhatsApp travar durante a inicialização
 - Interface responsiva com tema escuro
 
-## Requisitos (execução local)
+## Limites
 
-- **Node.js** 20 ou superior → https://nodejs.org
-- **Google Chrome** instalado
+| Item | Limite |
+|---|---|
+| Tamanho do arquivo anexo | 64 MB |
+| Linhas por planilha | 10.000 |
+| Contatos por disparo | 5.000 |
+| Tipos de arquivo aceitos | jpg, jpeg, png, gif, webp, bmp, mp4, mov, avi, mkv, 3gp, mp3, ogg, wav, aac, m4a, pdf, doc, docx, xls, xlsx, ppt, pptx, zip, txt |
 
-## Instalação local
+## Instalação — Windows (executável)
+
+Baixe o instalador `arx-send-setup.exe` na aba [Releases](../../releases) e execute.  
+O aplicativo abre automaticamente no navegador após a instalação. Não requer Node.js.
+
+## Instalação — execução local (Node.js)
+
+**Requisitos:** Node.js 20+ e Google Chrome instalados.
 
 ```bash
 git clone https://github.com/alclord/arx-send.git
@@ -31,51 +45,47 @@ npm start
 
 Acesse: **http://localhost:3000**
 
-## Deploy (Oracle Cloud Always Free)
-
-A aplicação está configurada para rodar em servidor Linux com Google Chrome.
+## Deploy — Oracle Cloud Always Free
 
 ### Requisitos do servidor
 - Ubuntu 22.04
-- Shape Ampere A1.Flex (4 OCPUs / 24GB RAM) — Oracle Always Free
+- Shape Ampere A1.Flex (4 OCPUs / 24 GB RAM)
 - Node.js 20, PM2, Google Chrome
 
 ### Instalação no servidor
 
 ```bash
-# Instalar Node.js
+# Node.js
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs git
 
-# Instalar PM2
+# PM2
 sudo npm install -g pm2
 
-# Clonar o projeto
+# Projeto
 git clone https://github.com/alclord/arx-send.git
 cd arx-send
 npm install
 
-# Instalar Google Chrome
+# Google Chrome
 wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
 sudo DEBIAN_FRONTEND=noninteractive dpkg -i google-chrome-stable_current_amd64.deb
 sudo apt install -f -y
 
-# Criar swap (recomendado)
+# Swap recomendado
 sudo fallocate -l 2G /swapfile
 sudo chmod 600 /swapfile
 sudo mkswap /swapfile
 sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 
-# Iniciar com PM2
+# Iniciar
 pm2 start src/server.js --name arx-send
 pm2 save
 pm2 startup
 ```
 
 ### Firewall
-
-Liberar portas no Oracle Security List e no iptables:
 
 ```bash
 sudo ufw allow 22
@@ -87,11 +97,22 @@ sudo iptables -I INPUT -p tcp --dport 22 -j ACCEPT
 
 ## Como usar
 
-1. Acesse a URL do servidor no navegador
+1. Acesse a URL no navegador
 2. Digite o nome da sua sessão (ex: `yuri`, `suporte`, `vendas`)
 3. Clique em **Conectar** e escaneie o QR code com o WhatsApp
 4. Aguarde os contatos carregarem
-5. Selecione os destinatários, escreva a mensagem e clique em **Disparar**
+5. **(Opcional)** Clique em 📊 para importar contatos de uma planilha
+6. Selecione os destinatários, configure a mensagem e clique em **Iniciar Disparo**
+
+### Mensagens personalizadas com planilha
+
+Importe uma planilha com colunas como `Nome`, `Empresa`, `Vencimento`.  
+Na mensagem, use `{{Nome}}`, `{{Empresa}}` etc. — cada envio substitui automaticamente pelos dados da linha correspondente.
+
+Exemplo:
+```
+Olá, {{Nome}}! Sua fatura da {{Empresa}} vence em {{Vencimento}}.
+```
 
 ## Aviso
 
