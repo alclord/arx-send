@@ -23,7 +23,12 @@ process.on('unhandledRejection', (reason) => {
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// Rota de uploads restrita: exige que o arquivo exista dentro do uploadsDir
+app.get('/uploads/:file', (req, res) => {
+  const filePath = path.join(uploadsDir, path.basename(req.params.file));
+  if (!fs.existsSync(filePath)) return res.status(404).end();
+  res.sendFile(filePath);
+});
 
 // ── Diretórios ──
 // Quando empacotado com pkg (process.pkg = true), usa AppData para arquivos graváveis
@@ -391,6 +396,7 @@ app.post('/api/:sessionId/send', sessionMiddleware, async (req, res) => {
 
   const { contactIds, message, filename, delayMs, contactsData } = req.body;
   if (!contactIds?.length)           return res.status(400).json({ error: 'Nenhum contato selecionado' });
+  if (contactIds.length > 5000)     return res.status(400).json({ error: 'Máximo de 5000 contatos por envio' });
   if (!message?.trim() && !filename) return res.status(400).json({ error: 'Mensagem ou arquivo obrigatório' });
 
   res.json({ ok: true, message: 'Envio iniciado' });
@@ -492,7 +498,7 @@ function normalizePhone(raw) {
 app.post('/api/:sessionId/parse-sheet', sessionMiddleware, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
   try {
-    const wb = XLSX.readFile(req.file.path);
+    const wb = XLSX.readFile(req.file.path, { sheetRows: 10001 });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
     if (!rows.length) { fs.unlinkSync(req.file.path); return res.status(400).json({ error: 'Planilha vazia' }); }
@@ -538,7 +544,10 @@ server.listen(PORT, () => {
   console.log(`\n🚀 ARX Send rodando em http://localhost:${PORT}\n`);
   // Abre o navegador automaticamente quando rodando como .exe empacotado
   if (process.pkg) {
-    const { exec } = require('child_process');
-    setTimeout(() => exec(`start http://localhost:${PORT}`), 1500);
+    const safePort = parseInt(PORT, 10);
+    if (safePort > 0 && safePort < 65536) {
+      const { exec } = require('child_process');
+      setTimeout(() => exec(`start http://localhost:${safePort}`), 1500);
+    }
   }
 });
