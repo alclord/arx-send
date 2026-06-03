@@ -489,10 +489,6 @@ app.post('/api/:sessionId/send', sessionMiddleware, async (req, res) => {
       if (i < contactIds.length - 1 && !sess.stopRequested) await sleep(delay);
     }
 
-    if (filename) {
-      try { fs.unlinkSync(path.join(uploadsDir, path.basename(filename))); } catch (_) {}
-    }
-
     emit(sid, 'send_done', { total });
   } finally {
     sess.isSending = false;
