@@ -98,8 +98,29 @@
     .btn-connect.disconnect{background:rgba(240,71,71,.15);border:1px solid rgba(240,71,71,.3);color:var(--red)}
     .btn-connect.disconnect:hover{background:rgba(240,71,71,.25)}
 
+    /* ── UPDATE BANNER ── */
+    #updateBanner{
+      display:none;align-items:center;gap:12px;
+      padding:8px 32px;font-size:12px;
+      background:rgba(37,211,102,.06);border-bottom:1px solid rgba(37,211,102,.15);
+      flex-shrink:0;
+    }
+    #updateBanner.show{display:flex}
+    .update-text{flex:1;color:var(--text);line-height:1.4}
+    .update-text strong{color:var(--accent)}
+    .update-prog-wrap{width:120px;height:3px;background:var(--border);border-radius:2px;overflow:hidden;flex-shrink:0}
+    .update-prog-bar{height:100%;background:var(--accent);width:0%;transition:width .3s}
+    #updatePct{font-size:11px;color:var(--muted);min-width:28px;text-align:right;flex-shrink:0}
+    .btn-update{
+      padding:5px 14px;background:var(--accent);color:#fff;border:none;
+      border-radius:6px;font-family:'Syne',sans-serif;font-size:11px;font-weight:700;
+      cursor:pointer;transition:all .15s;white-space:nowrap;flex-shrink:0;
+    }
+    .btn-update:hover{background:#1fc25c}
+    .btn-update:disabled{background:var(--surface2);color:var(--muted);cursor:default}
+
     /* ── LAYOUT ── */
-    .main{display:flex;flex:1;overflow:hidden;height:calc(100vh - 73px)}
+    .main{display:flex;flex:1;overflow:hidden;min-height:0}
 
     /* LEFT */
     .left{width:380px;flex-shrink:0;border-right:1px solid var(--border);display:flex;flex-direction:column}
@@ -291,6 +312,17 @@
     <button class="btn-connect" id="connectBtn" onclick="toggleConnect()">Conectar</button>
   </div>
 </header>
+
+<!-- UPDATE BANNER -->
+<div id="updateBanner">
+  <span>🔄</span>
+  <span class="update-text" id="updateText"></span>
+  <div class="update-prog-wrap" id="updateProgWrap" style="display:none">
+    <div class="update-prog-bar" id="updateProgBar"></div>
+  </div>
+  <span id="updatePct"></span>
+  <button class="btn-update" id="updateBtn" onclick="installUpdate()" style="display:none">Reiniciar e instalar</button>
+</div>
 
 <!-- MAIN -->
 <div class="main">
@@ -616,6 +648,54 @@ socket.on('send_stopped', () => {
   document.getElementById('stopBtn').style.display = 'none';
   updateSendBtn();
 });
+
+socket.on('update_status', ({ status, version, progress }) => {
+  const banner   = document.getElementById('updateBanner');
+  const text     = document.getElementById('updateText');
+  const progWrap = document.getElementById('updateProgWrap');
+  const progBar  = document.getElementById('updateProgBar');
+  const pctEl    = document.getElementById('updatePct');
+  const btn      = document.getElementById('updateBtn');
+
+  if (status === 'available') {
+    banner.classList.add('show');
+    text.innerHTML = `Nova versão <strong>${version}</strong> disponível — baixando...`;
+    progWrap.style.display = 'none';
+    pctEl.textContent = '';
+    btn.style.display = 'none';
+  } else if (status === 'downloading') {
+    banner.classList.add('show');
+    text.innerHTML = `Baixando atualização <strong>${version}</strong>...`;
+    progWrap.style.display = '';
+    progBar.style.width = progress + '%';
+    pctEl.textContent = progress + '%';
+    btn.style.display = 'none';
+  } else if (status === 'ready') {
+    banner.classList.add('show');
+    text.innerHTML = `✅ Atualização <strong>${version}</strong> pronta para instalar`;
+    progWrap.style.display = 'none';
+    pctEl.textContent = '';
+    btn.style.display = '';
+    btn.disabled = false;
+    btn.textContent = 'Reiniciar e instalar';
+  } else {
+    banner.classList.remove('show');
+  }
+});
+
+async function installUpdate() {
+  if (!confirm('O aplicativo será fechado para instalar a atualização e reabrirá automaticamente.\n\nDeseja continuar?')) return;
+  const btn  = document.getElementById('updateBtn');
+  const text = document.getElementById('updateText');
+  btn.disabled = true;
+  btn.textContent = 'Instalando...';
+  text.textContent = 'Instalando atualização — o app reabrirá em instantes...';
+  try {
+    await fetch('/api/update/install', { method: 'POST' });
+  } catch {
+    // Servidor encerrou para instalar — esperado
+  }
+}
 
 // ── API helpers ──
 function api(path, opts) {

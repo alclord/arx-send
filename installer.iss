@@ -16,6 +16,7 @@ Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
+CloseApplications=yes
 
 [Languages]
 Name: "portuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
@@ -32,4 +33,13 @@ Name: "{group}\Desinstalar {#AppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
 
 [Run]
+; Instalação via wizard: checkbox opcional para iniciar o app
 Filename: "{app}\{#AppExeName}"; Description: "Iniciar {#AppName}"; Flags: nowait postinstall skipifsilent
+; Instalação silenciosa (auto-update): inicia o app automaticamente
+Filename: "{app}\{#AppExeName}"; Flags: nowait; Check: IsSilentInstall
+
+[Code]
+function IsSilentInstall(): Boolean;
+begin
+  Result := WizardSilent();
+end;

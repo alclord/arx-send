@@ -8,6 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const XLSX = require('xlsx');
+const { spawn } = require('child_process');
 
 const {
   sanitizeSessionId,
@@ -22,6 +23,24 @@ const {
   MAX_SHEET_ROWS,
   CONTACT_LOAD_RETRIES,
 } = require('./utils');
+const { isNewerVersion, fetchLatestRelease, downloadFile } = require('./updater');
+const { version: CURRENT_VERSION } = require('../package.json');
+
+// ── Auto-update ──
+const GITHUB_OWNER    = 'alclord';
+const GITHUB_REPO     = 'arx-send';
+const ASSET_NAME      = 'ARX-Send-Setup.exe';
+const UPDATES_ENABLED = Boolean(process.pkg) || process.env.CHECK_UPDATES === 'true';
+
+// status: idle | checking | up_to_date | available | downloading | ready
+const updateState = {
+  status:      'idle',
+  version:     null,
+  progress:    0,
+  filePath:    null,
+  downloadUrl: null,
+};
+let updateCheckInProgress = false;
 
 const app = express();
 const server = http.createServer(app);
@@ -352,6 +371,90 @@ async function loadContacts(sessionId, attempt = 1) {
   }
 }
 
+// ── Auto-update: funções ──
+function emitUpdateStatus() {
+  io.emit('update_status', {
+    currentVersion: CURRENT_VERSION,
+    status:         updateState.status,
+    version:        updateState.version,
+    progress:       updateState.progress,
+  });
+}
+
+async function downloadUpdate() {
+  if (updateState.status === 'ready') return;
+  updateState.status   = 'downloading';
+  updateState.progress = 0;
+  emitUpdateStatus();
+
+  const dest = path.join(os.tmpdir(), `ARX-Send-Setup-${updateState.version}.exe`);
+  try {
+    await downloadFile(updateState.downloadUrl, dest, (pct) => {
+      updateState.progress = pct;
+      emitUpdateStatus();
+    });
+    updateState.status   = 'ready';
+    updateState.filePath = dest;
+    updateState.progress = 100;
+    emitUpdateStatus();
+    console.log(`[update] Versão ${updateState.version} pronta em: ${dest}`);
+  } catch (err) {
+    console.warn('[update] Erro ao baixar atualização:', err.message);
+    updateState.status   = 'available';
+    updateState.progress = 0;
+    emitUpdateStatus();
+    fs.promises.unlink(dest).catch(() => {});
+  }
+}
+
+async function checkForUpdates() {
+  if (updateCheckInProgress) return;
+  if (updateState.status === 'downloading' || updateState.status === 'ready') return;
+
+  updateCheckInProgress = true;
+  updateState.status = 'checking';
+  emitUpdateStatus();
+
+  try {
+    const release = await fetchLatestRelease(GITHUB_OWNER, GITHUB_REPO);
+
+    if (!release.tag_name) {
+      // Sem releases publicadas ainda
+      updateState.status = 'idle';
+      emitUpdateStatus();
+      return;
+    }
+
+    if (!isNewerVersion(release.tag_name, CURRENT_VERSION)) {
+      updateState.status  = 'up_to_date';
+      updateState.version = release.tag_name;
+      emitUpdateStatus();
+      return;
+    }
+
+    const asset = release.assets?.find(a => a.name === ASSET_NAME);
+    if (!asset) {
+      console.warn(`[update] Asset "${ASSET_NAME}" não encontrado na release ${release.tag_name}`);
+      updateState.status = 'idle';
+      emitUpdateStatus();
+      return;
+    }
+
+    updateState.version     = release.tag_name;
+    updateState.downloadUrl = asset.browser_download_url;
+    updateState.status      = 'available';
+    emitUpdateStatus();
+
+    await downloadUpdate();
+  } catch (err) {
+    console.warn('[update] Erro ao verificar atualizações:', err.message);
+    updateState.status = 'idle';
+    emitUpdateStatus();
+  } finally {
+    updateCheckInProgress = false;
+  }
+}
+
 // ── Socket.IO ──
 io.on('connection', (socket) => {
   socket.on('join_session', (rawId) => {
@@ -373,6 +476,14 @@ io.on('connection', (socket) => {
     if (sess.contacts.length > 0) {
       socket.emit('contacts', { contacts: sess.contacts });
     }
+
+    // Envia estado atual da atualização ao conectar
+    socket.emit('update_status', {
+      currentVersion: CURRENT_VERSION,
+      status:         updateState.status,
+      version:        updateState.version,
+      progress:       updateState.progress,
+    });
   });
 });
 
@@ -584,8 +695,54 @@ app.post('/api/:sessionId/extract-phones', sessionMiddleware, async (req, res) =
   }
 });
 
+// ── Rotas de atualização ──
+app.get('/api/update/status', (req, res) => {
+  res.json({
+    currentVersion: CURRENT_VERSION,
+    status:         updateState.status,
+    version:        updateState.version,
+    progress:       updateState.progress,
+  });
+});
+
+app.post('/api/update/install', async (req, res) => {
+  if (updateState.status !== 'ready' || !updateState.filePath) {
+    return res.status(400).json({ error: 'Nenhuma atualização pronta para instalar' });
+  }
+
+  // Verifica se o arquivo ainda existe (pode ter sido limpo pelo SO)
+  try {
+    await fs.promises.access(updateState.filePath);
+  } catch {
+    updateState.status   = 'available';
+    updateState.filePath = null;
+    emitUpdateStatus();
+    downloadUpdate().catch(err => console.warn('[update] Erro ao rebaixar:', err.message));
+    return res.status(400).json({ error: 'Arquivo perdido, rebaixando. Tente novamente em instantes.' });
+  }
+
+  const sending = Object.values(sessions).some(s => s.isSending);
+  if (sending) {
+    return res.status(400).json({ error: 'Aguarde o disparo em andamento terminar antes de atualizar.' });
+  }
+
+  res.json({ ok: true });
+
+  setTimeout(() => {
+    try {
+      spawn(updateState.filePath, ['/VERYSILENT', '/CLOSEAPPLICATIONS'], {
+        detached: true,
+        stdio:    'ignore',
+      }).unref();
+    } catch (err) {
+      console.error('[update] Falha ao iniciar installer:', err.message);
+    }
+    process.exit(0);
+  }, 800);
+});
+
 server.listen(PORT, () => {
-  console.log(`\n🚀 ARX Send rodando em http://localhost:${PORT}\n`);
+  console.log(`\n🚀 ARX Send v${CURRENT_VERSION} rodando em http://localhost:${PORT}\n`);
   // Abre o navegador automaticamente quando rodando como .exe empacotado
   if (process.pkg) {
     const safePort = parseInt(PORT, 10);
@@ -595,3 +752,9 @@ server.listen(PORT, () => {
     }
   }
 });
+
+// Verifica atualizações 30s após o servidor subir, depois a cada 6 horas
+if (UPDATES_ENABLED) {
+  setTimeout(checkForUpdates, 30 * 1000);
+  setInterval(checkForUpdates, 6 * 60 * 60 * 1000);
+}
