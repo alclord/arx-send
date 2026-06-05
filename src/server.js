@@ -9,6 +9,20 @@ const fs = require('fs');
 const os = require('os');
 const XLSX = require('xlsx');
 
+const {
+  sanitizeSessionId,
+  normalizePhone,
+  removeNinthDigit,
+  personalizeMessage,
+  sleep,
+  MIN_SEND_DELAY_MS,
+  DEFAULT_SEND_DELAY_MS,
+  MAX_CONTACTS_PER_SEND,
+  MAX_FILE_SIZE_BYTES,
+  MAX_SHEET_ROWS,
+  CONTACT_LOAD_RETRIES,
+} = require('./utils');
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
@@ -23,11 +37,16 @@ process.on('unhandledRejection', (reason) => {
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
+
 // Rota de uploads restrita: exige que o arquivo exista dentro do uploadsDir
-app.get('/uploads/:file', (req, res) => {
+app.get('/uploads/:file', async (req, res) => {
   const filename = path.basename(req.params.file);
   const filePath = path.join(uploadsDir, filename);
-  if (!fs.existsSync(filePath)) return res.status(404).end();
+  try {
+    await fs.promises.access(filePath);
+  } catch {
+    return res.status(404).end();
+  }
   res.sendFile(filename, { root: uploadsDir }, (err) => {
     if (err && !res.headersSent) res.status(500).end();
   });
@@ -49,16 +68,22 @@ const sessionDir = process.platform === 'win32'
 });
 
 // Remove uploads com mais de 2 horas que não foram usados em nenhum envio
-function cleanOrphanedUploads() {
+async function cleanOrphanedUploads() {
+  const cutoff = Date.now() - 2 * 60 * 60 * 1000;
   try {
-    const cutoff = Date.now() - 2 * 60 * 60 * 1000;
-    fs.readdirSync(uploadsDir).forEach(f => {
+    const files = await fs.promises.readdir(uploadsDir);
+    await Promise.all(files.map(async (f) => {
       try {
-        const fp = path.join(uploadsDir, f);
-        if (fs.statSync(fp).mtimeMs < cutoff) fs.unlinkSync(fp);
-      } catch (_) {}
-    });
-  } catch (_) {}
+        const fp   = path.join(uploadsDir, f);
+        const stat = await fs.promises.stat(fp);
+        if (stat.mtimeMs < cutoff) await fs.promises.unlink(fp);
+      } catch (err) {
+        console.warn(`[cleanup] Erro ao remover arquivo ${f}:`, err.message);
+      }
+    }));
+  } catch (err) {
+    console.warn('[cleanup] Erro ao listar uploads:', err.message);
+  }
 }
 cleanOrphanedUploads();
 setInterval(cleanOrphanedUploads, 60 * 60 * 1000);
@@ -87,7 +112,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({
   storage,
-  limits: { fileSize: 64 * 1024 * 1024 },
+  limits: { fileSize: MAX_FILE_SIZE_BYTES },
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     if (ALLOWED_UPLOAD_EXTS.has(ext)) return cb(null, true);
@@ -96,7 +121,7 @@ const upload = multer({
 });
 
 // ── Sessões ──
-// sessions[id] = { id, client, status, contacts, isSending, stopRequested }
+// sessions[id] = { id, client, status, contacts, isSending, stopRequested, watchdog }
 const sessions = {};
 
 function getSession(id) {
@@ -141,14 +166,21 @@ function loadCachedContacts(sessionId) {
   const file = path.join(cacheDir, `${sessionId}.json`);
   try {
     if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch (_) {}
+  } catch (err) {
+    console.warn(`[${sessionId}] Falha ao carregar cache de contatos:`, err.message);
+  }
   return [];
 }
 
-function saveCachedContacts(sessionId, contacts) {
+async function saveCachedContacts(sessionId, contacts) {
   try {
-    fs.writeFileSync(path.join(cacheDir, `${sessionId}.json`), JSON.stringify(contacts));
-  } catch (_) {}
+    await fs.promises.writeFile(
+      path.join(cacheDir, `${sessionId}.json`),
+      JSON.stringify(contacts)
+    );
+  } catch (err) {
+    console.warn(`[${sessionId}] Falha ao salvar cache de contatos:`, err.message);
+  }
 }
 
 // ── Chromium ──
@@ -162,9 +194,9 @@ function getChromiumPath() {
   }
   // Windows: tenta Chrome instalado primeiro (mais rápido e sempre disponível)
   const winCandidates = [
-    path.join(process.env.PROGRAMFILES       || 'C:\\Program Files',        'Google\\Chrome\\Application\\chrome.exe'),
-    path.join(process.env['PROGRAMFILES(X86)']|| 'C:\\Program Files (x86)', 'Google\\Chrome\\Application\\chrome.exe'),
-    path.join(process.env.LOCALAPPDATA       || '', 'Google\\Chrome\\Application\\chrome.exe'),
+    path.join(process.env.PROGRAMFILES        || 'C:\\Program Files',        'Google\\Chrome\\Application\\chrome.exe'),
+    path.join(process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)', 'Google\\Chrome\\Application\\chrome.exe'),
+    path.join(process.env.LOCALAPPDATA        || '', 'Google\\Chrome\\Application\\chrome.exe'),
   ];
   for (const p of winCandidates) {
     if (p && fs.existsSync(p)) return p;
@@ -185,7 +217,9 @@ async function connectSession(sessionId) {
   if (sess.client) {
     try {
       await Promise.race([sess.client.destroy(), sleep(5000)]);
-    } catch (_) {}
+    } catch (err) {
+      console.warn(`[${sessionId}] Erro ao destruir cliente anterior:`, err.message);
+    }
     sess.client = null;
     await sleep(1000);
   }
@@ -266,7 +300,9 @@ async function connectSession(sessionId) {
 
   sess.client.on('auth_failure', async () => {
     sess.status = 'disconnected';
-    try { await sess.client.destroy(); } catch (_) {}
+    try { await sess.client.destroy(); } catch (err) {
+      console.warn(`[${sessionId}] Erro ao destruir cliente após falha de auth:`, err.message);
+    }
     sess.client = null;
     emit(sessionId, 'status', { status: 'error', message: 'Falha na autenticação.' });
   });
@@ -279,19 +315,18 @@ async function loadContacts(sessionId, attempt = 1) {
   const sess = getSession(sessionId);
   if (sess.status !== 'ready' || !sess.client) return;
 
-  const max       = 8;
-  const retryMs   = attempt === 1 ? 4000 : 6000;
+  const retryMs = attempt === 1 ? 4000 : 6000;
 
   emit(sessionId, 'status', {
     status:  'ready',
-    message: `Carregando contatos${attempt > 1 ? ` (${attempt}/${max})` : ''}...`
+    message: `Carregando contatos${attempt > 1 ? ` (${attempt}/${CONTACT_LOAD_RETRIES})` : ''}...`
   });
 
   try {
     const chats = await sess.client.getChats();
     console.log(`[${sessionId}] getChats tentativa ${attempt}: ${chats.length} conversas`);
 
-    if (chats.length === 0 && attempt < max) {
+    if (chats.length === 0 && attempt < CONTACT_LOAD_RETRIES) {
       await sleep(retryMs);
       return loadContacts(sessionId, attempt + 1);
     }
@@ -303,13 +338,13 @@ async function loadContacts(sessionId, attempt = 1) {
       unread:  c.unreadCount || 0
     })).sort((a, b) => a.name.localeCompare(b.name));
 
-    saveCachedContacts(sessionId, sess.contacts);
+    await saveCachedContacts(sessionId, sess.contacts);
     emit(sessionId, 'contacts', { contacts: sess.contacts });
     emit(sessionId, 'status',   { status: 'ready', message: `Pronto — ${sess.contacts.length} conversas carregadas` });
   } catch (e) {
     console.error(`[${sessionId}] Erro ao carregar contatos (tentativa ${attempt}):`, e.message);
     const transient = e.message.includes('timed out') || e.message.includes('context') || e.message.includes('Target');
-    if (transient && attempt < max) {
+    if (transient && attempt < CONTACT_LOAD_RETRIES) {
       await sleep(retryMs);
       return loadContacts(sessionId, attempt + 1);
     }
@@ -320,7 +355,7 @@ async function loadContacts(sessionId, attempt = 1) {
 // ── Socket.IO ──
 io.on('connection', (socket) => {
   socket.on('join_session', (rawId) => {
-    const sessionId = String(rawId || '').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 30);
+    const sessionId = sanitizeSessionId(rawId);
     if (!sessionId) return;
 
     socket.join(`s:${sessionId}`);
@@ -343,7 +378,7 @@ io.on('connection', (socket) => {
 
 // ── API ──
 function sessionMiddleware(req, res, next) {
-  const id = String(req.params.sessionId || '').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 30);
+  const id = sanitizeSessionId(req.params.sessionId);
   if (!id) return res.status(400).json({ error: 'sessionId inválido' });
   req.sessionId = id;
   req.sess = getSession(id);
@@ -366,8 +401,12 @@ app.post('/api/:sessionId/connect', sessionMiddleware, (req, res) => {
 app.post('/api/:sessionId/disconnect', sessionMiddleware, async (req, res) => {
   const s = req.sess;
   if (s.client) {
-    try { await s.client.logout(); }  catch (_) {}
-    try { await s.client.destroy(); } catch (_) {}
+    try { await s.client.logout(); } catch (err) {
+      console.warn(`[${req.sessionId}] Erro ao fazer logout:`, err.message);
+    }
+    try { await s.client.destroy(); } catch (err) {
+      console.warn(`[${req.sessionId}] Erro ao destruir cliente:`, err.message);
+    }
     s.client = null;
   }
   s.status   = 'disconnected';
@@ -417,9 +456,9 @@ app.post('/api/:sessionId/send', sessionMiddleware, async (req, res) => {
   if (sess.isSending)           return res.status(400).json({ error: 'Envio já em andamento' });
 
   const { contactIds, message, filename, delayMs, contactsData } = req.body;
-  if (!contactIds?.length)           return res.status(400).json({ error: 'Nenhum contato selecionado' });
-  if (contactIds.length > 5000)     return res.status(400).json({ error: 'Máximo de 5000 contatos por envio' });
-  if (!message?.trim() && !filename) return res.status(400).json({ error: 'Mensagem ou arquivo obrigatório' });
+  if (!contactIds?.length)                       return res.status(400).json({ error: 'Nenhum contato selecionado' });
+  if (contactIds.length > MAX_CONTACTS_PER_SEND) return res.status(400).json({ error: `Máximo de ${MAX_CONTACTS_PER_SEND} contatos por envio` });
+  if (!message?.trim() && !filename)             return res.status(400).json({ error: 'Mensagem ou arquivo obrigatório' });
 
   res.json({ ok: true, message: 'Envio iniciado' });
 
@@ -427,7 +466,7 @@ app.post('/api/:sessionId/send', sessionMiddleware, async (req, res) => {
   sess.stopRequested = false;
 
   const total = contactIds.length;
-  const delay = Math.max(delayMs || 3000, 1500);
+  const delay = Math.max(delayMs || DEFAULT_SEND_DELAY_MS, MIN_SEND_DELAY_MS);
 
   emit(sid, 'send_start', { total });
 
@@ -448,10 +487,8 @@ app.post('/api/:sessionId/send', sessionMiddleware, async (req, res) => {
       emit(sid, 'send_progress', { index: i, total, name, status: 'sending' });
 
       // Personalizar mensagem com variáveis da planilha
-      const rowData   = contactsData?.[contactIds[i]] || {};
-      const finalMsg  = message?.trim()
-        ? message.trim().replace(/\{\{([^}]+)\}\}/g, (_, key) => rowData[key.trim()] ?? `{{${key.trim()}}}`)
-        : '';
+      const rowData  = contactsData?.[contactIds[i]] || {};
+      const finalMsg = personalizeMessage(message?.trim() || '', rowData);
 
       const sendTo = async (id) => {
         if (media && finalMsg) {
@@ -495,49 +532,39 @@ app.post('/api/:sessionId/send', sessionMiddleware, async (req, res) => {
   }
 });
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-// Remove o nono dígito de números brasileiros (55 + DDD + 9 + 8 dígitos → 55 + DDD + 8 dígitos)
-function removeNinthDigit(id) {
-  const m = id.match(/^55(\d{2})9(\d{8})@c\.us$/);
-  return m ? `55${m[1]}${m[2]}@c.us` : null;
-}
-
-// ── Normalizar telefone ──
-function normalizePhone(raw) {
-  let digits = String(raw).replace(/\D/g, '').replace(/^0+/, '');
-  if (!digits) return null;
-  if (!digits.startsWith('55')) digits = '55' + digits;
-  if (digits.length < 12 || digits.length > 13) return null;
-  return digits + '@c.us';
-}
-
 // ── Rotas de importação de planilha ──
 app.post('/api/:sessionId/parse-sheet', sessionMiddleware, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
   try {
-    const wb = XLSX.readFile(req.file.path, { sheetRows: 10001 });
-    const ws = wb.Sheets[wb.SheetNames[0]];
+    const wb   = XLSX.readFile(req.file.path, { sheetRows: MAX_SHEET_ROWS });
+    const ws   = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
-    if (!rows.length) { fs.unlinkSync(req.file.path); return res.status(400).json({ error: 'Planilha vazia' }); }
+    if (!rows.length) {
+      fs.promises.unlink(req.file.path).catch(err => console.warn('[parse-sheet] Falha ao remover arquivo vazio:', err.message));
+      return res.status(400).json({ error: 'Planilha vazia' });
+    }
     const headers = rows[0].map(String);
     const preview = rows.slice(1, 4).map(r => headers.map((_, i) => String(r[i] ?? '')));
     res.json({ ok: true, headers, preview, filename: req.file.filename });
   } catch (e) {
-    try { fs.unlinkSync(req.file.path); } catch (_) {}
+    fs.promises.unlink(req.file.path).catch(err => console.warn('[parse-sheet] Falha ao remover arquivo com erro:', err.message));
     res.status(400).json({ error: 'Erro ao ler planilha: ' + e.message });
   }
 });
 
-app.post('/api/:sessionId/extract-phones', sessionMiddleware, (req, res) => {
+app.post('/api/:sessionId/extract-phones', sessionMiddleware, async (req, res) => {
   const { filename, column, nameColumn } = req.body;
   if (!filename) return res.status(400).json({ error: 'Arquivo não informado' });
   const filePath = path.join(uploadsDir, path.basename(filename));
-  if (!fs.existsSync(filePath)) return res.status(400).json({ error: 'Arquivo não encontrado' });
   try {
-    const wb = XLSX.readFile(filePath, { sheetRows: 10001 });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+    await fs.promises.access(filePath);
+  } catch {
+    return res.status(400).json({ error: 'Arquivo não encontrado' });
+  }
+  try {
+    const wb      = XLSX.readFile(filePath, { sheetRows: MAX_SHEET_ROWS });
+    const ws      = wb.Sheets[wb.SheetNames[0]];
+    const rows    = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
     const headers = rows[0].map(String);
     const colIdx  = parseInt(column);
     const nameIdx = nameColumn !== undefined && nameColumn !== '' ? parseInt(nameColumn) : -1;
@@ -546,15 +573,14 @@ app.post('/api/:sessionId/extract-phones', sessionMiddleware, (req, res) => {
       const phone = normalizePhone(rows[i][colIdx]);
       if (!phone) continue;
       const name = nameIdx >= 0 ? String(rows[i][nameIdx] || phone) : phone;
-      // Guardar todos os dados da linha como rowData { "Nome Coluna": "valor" }
       const rowData = {};
       headers.forEach((h, idx) => { rowData[h] = String(rows[i][idx] ?? ''); });
       contacts.push({ id: phone, name, isGroup: false, imported: true, rowData });
     }
-    try { fs.unlinkSync(filePath); } catch (_) {}
+    fs.promises.unlink(filePath).catch(err => console.warn('[extract-phones] Falha ao remover arquivo:', err.message));
     res.json({ ok: true, contacts, headers });
   } catch (e) {
-    res.status(400).json({ error: 'Erro: ' + e.message });
+    res.status(400).json({ error: 'Erro ao processar planilha: ' + e.message });
   }
 });
 
