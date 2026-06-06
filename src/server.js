@@ -743,8 +743,8 @@ app.post('/api/update/install', async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`\n🚀 ARX Send v${CURRENT_VERSION} rodando em http://localhost:${PORT}\n`);
-  // Abre o navegador automaticamente quando rodando como .exe empacotado
-  if (process.pkg) {
+  // Abre o navegador quando rodando como server standalone (pkg sem Electron)
+  if (process.pkg && !process.versions.electron) {
     const safePort = parseInt(PORT, 10);
     if (safePort > 0 && safePort < 65536) {
       const { exec } = require('child_process');

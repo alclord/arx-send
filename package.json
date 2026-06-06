@@ -2,12 +2,40 @@
   "name": "arx-send",
   "version": "1.1.1",
   "description": "ARX Send - Disparo em massa via WhatsApp",
-  "main": "src/server.js",
-  "bin": "src/server.js",
+  "main": "src/main.js",
   "scripts": {
     "start": "node src/server.js",
-    "build": "pkg . --output dist/arx-send.exe --compress GZip",
+    "electron": "electron .",
+    "build": "electron-builder --win",
+    "build:server": "pkg src/server.js --output dist/arx-send-server.exe --compress GZip",
     "test": "node --test tests/utils.test.js"
+  },
+  "build": {
+    "appId": "com.arx.arx-send",
+    "productName": "ARX Send",
+    "copyright": "ARX Administradora",
+    "asar": false,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "public/logo.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "runAfterFinish": true,
+      "artifactName": "ARX-Send-Setup.exe",
+      "installerLanguages": ["pt_BR"],
+      "language": "1046"
+    }
   },
   "pkg": {
     "assets": [
@@ -29,6 +57,8 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "electron": "^42.3.3",
+    "electron-builder": "^26.8.1",
     "pkg": "^5.8.1"
   }
 }
