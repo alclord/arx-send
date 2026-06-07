@@ -1,6 +1,38 @@
 const socket = io();
 const isElectron = !!(window.electronAPI && window.electronAPI.isElectron);
 
+if (isElectron && window.electronAPI.onUpdateStatus) {
+  window.electronAPI.onUpdateStatus(({ status, version, progress, message }) => {
+    const text = document.getElementById('updateText');
+    const progWrap = document.getElementById('updateProgWrap');
+    const progBar = document.getElementById('updateProgBar');
+    const pctEl = document.getElementById('updatePct');
+    const btn = document.getElementById('updateBtn');
+
+    if (status === 'available') {
+      text.innerHTML = `Nova versão <strong>${version}</strong> disponível — baixando...`;
+      progWrap.style.display = 'none';
+      pctEl.textContent = '';
+      btn.style.display = 'none';
+    } else if (status === 'downloading') {
+      text.innerHTML = `Baixando atualização <strong>${version}</strong>...`;
+      progWrap.style.display = '';
+      progBar.style.width = progress + '%';
+      pctEl.textContent = progress + '%';
+      btn.style.display = 'none';
+    } else if (status === 'ready') {
+      text.innerHTML = `✅ Atualização <strong>${version}</strong> pronta para instalar`;
+      progWrap.style.display = 'none';
+      pctEl.textContent = '';
+      btn.style.display = '';
+    } else if (status === 'error') {
+      text.textContent = message || 'Erro ao buscar atualização.';
+      progWrap.style.display = 'none';
+      pctEl.textContent = '';
+    }
+  });
+}
+
 // ── Sessão ──
 let sessionId = null;
 
@@ -193,6 +225,29 @@ async function installUpdate() {
   try {
     await fetch('/api/update/install', { method: 'POST' });
   } catch { }
+}
+
+async function checkForUpdates() {
+  const text = document.getElementById('updateText');
+  text.textContent = 'Verificando atualizações...';
+
+  if (isElectron && window.electronAPI.checkForUpdates) {
+    await window.electronAPI.checkForUpdates();
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/update/check');
+    const data = await res.json();
+    if (data.updateAvailable) {
+      text.innerHTML = `Nova versão <strong>${data.latestVersion}</strong> disponível`;
+      document.getElementById('updateBtn').style.display = '';
+    } else {
+      text.textContent = 'Você já está na versão mais recente.';
+    }
+  } catch {
+    text.textContent = 'Erro ao verificar atualizações.';
+  }
 }
 
 // ── API helpers ──

@@ -189,6 +189,10 @@ ipcMain.handle('show-notification', (event, { title, body }) => {
 ipcMain.handle('install-update', () => {
   autoUpdater.quitAndInstall();
 });
+ipcMain.handle('check-for-updates', () => {
+  autoUpdater.checkForUpdates().catch(() => {});
+  return { ok: true };
+});
 
 // ── App lifecycle ──
 app.whenReady().then(() => {

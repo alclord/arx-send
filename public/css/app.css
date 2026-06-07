@@ -90,7 +90,7 @@ header::after{
 
 /* ── UPDATE BANNER ── */
 #updateBanner{
-  display:none;align-items:center;gap:12px;
+  display:flex;align-items:center;gap:12px;
   padding:8px 32px;font-size:12px;
   background:rgba(37,211,102,.06);border-bottom:1px solid rgba(37,211,102,.15);
   flex-shrink:0;
