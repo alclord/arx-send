@@ -1,10 +1,4 @@
-const SESSION_ID_MAX_LENGTH  = 30;
-const MIN_SEND_DELAY_MS      = 1500;
-const DEFAULT_SEND_DELAY_MS  = 3000;
-const MAX_CONTACTS_PER_SEND  = 5000;
-const MAX_FILE_SIZE_BYTES    = 64 * 1024 * 1024;
-const MAX_SHEET_ROWS         = 10001;
-const CONTACT_LOAD_RETRIES   = 8;
+const SESSION_ID_MAX_LENGTH = 30;
 
 function sanitizeSessionId(raw) {
   return String(raw || '').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, SESSION_ID_MAX_LENGTH);
@@ -23,8 +17,6 @@ function removeNinthDigit(id) {
   return m ? `55${m[1]}${m[2]}@c.us` : null;
 }
 
-// Substitui {{Variavel}} no template com os dados da linha da planilha.
-// Se a variável não existe no rowData, mantém o placeholder original.
 function personalizeMessage(template, rowData) {
   if (!template) return '';
   return template.replace(/\{\{([^}]+)\}\}/g, (_, key) => {
@@ -41,11 +33,4 @@ module.exports = {
   removeNinthDigit,
   personalizeMessage,
   sleep,
-  SESSION_ID_MAX_LENGTH,
-  MIN_SEND_DELAY_MS,
-  DEFAULT_SEND_DELAY_MS,
-  MAX_CONTACTS_PER_SEND,
-  MAX_FILE_SIZE_BYTES,
-  MAX_SHEET_ROWS,
-  CONTACT_LOAD_RETRIES,
 };

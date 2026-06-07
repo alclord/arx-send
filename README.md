@@ -114,6 +114,15 @@ Exemplo:
 Olá, {{Nome}}! Sua fatura da {{Empresa}} vence em {{Vencimento}}.
 ```
 
+## Desenvolvimento
+
+```bash
+# Rodar testes de unidade (normalização de telefone, personalização de mensagem, etc.)
+npm test
+```
+
+Os testes cobrem as funções críticas em `src/utils.js` usando o runner nativo do Node.js (`node:test`) — sem dependências extras.
+
 ## Aviso
 
 Use com responsabilidade. Disparos em massa podem resultar em banimento pelo WhatsApp.  

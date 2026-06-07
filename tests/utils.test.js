@@ -1,6 +1,6 @@
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizePhone, removeNinthDigit, personalizeMessage, sanitizeSessionId } = require('../src/utils');
+const { normalizePhone, removeNinthDigit, personalizeMessage, sanitizeSessionId } = require('../src/utils/helpers');
 
 // ── normalizePhone ──────────────────────────────────────────────────────────
 
