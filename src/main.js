@@ -190,8 +190,32 @@ ipcMain.handle('install-update', () => {
   autoUpdater.quitAndInstall();
 });
 ipcMain.handle('check-for-updates', () => {
-  autoUpdater.checkForUpdates().catch(() => {});
-  return { ok: true };
+  return new Promise((resolve) => {
+    const onAvailable = (info) => {
+      autoUpdater.removeListener('update-not-available', onNotAvailable);
+      autoUpdater.removeListener('error', onError);
+      resolve({ ok: true, updateAvailable: true, version: info.version });
+    };
+    const onNotAvailable = () => {
+      autoUpdater.removeListener('update-available', onAvailable);
+      autoUpdater.removeListener('error', onError);
+      resolve({ ok: true, updateAvailable: false });
+    };
+    const onError = (err) => {
+      autoUpdater.removeListener('update-available', onAvailable);
+      autoUpdater.removeListener('update-not-available', onNotAvailable);
+      resolve({ ok: false, error: err.message });
+    };
+    autoUpdater.once('update-available', onAvailable);
+    autoUpdater.once('update-not-available', onNotAvailable);
+    autoUpdater.once('error', onError);
+    autoUpdater.checkForUpdates().catch((err) => {
+      autoUpdater.removeListener('update-available', onAvailable);
+      autoUpdater.removeListener('update-not-available', onNotAvailable);
+      autoUpdater.removeListener('error', onError);
+      resolve({ ok: false, error: err.message });
+    });
+  });
 });
 
 // ── App lifecycle ──

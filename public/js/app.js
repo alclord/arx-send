@@ -229,16 +229,28 @@ async function installUpdate() {
 
 async function checkForUpdates() {
   const text = document.getElementById('updateText');
+  const btn = document.getElementById('checkUpdateBtn');
+  btn.disabled = true;
+  btn.textContent = 'Verificando...';
   text.textContent = 'Verificando atualizações...';
 
   if (isElectron && window.electronAPI.checkForUpdates) {
-    await window.electronAPI.checkForUpdates();
+    const result = await window.electronAPI.checkForUpdates();
+    btn.disabled = false;
+    btn.textContent = 'Verificar atualizações';
+    if (result.updateAvailable) {
+      text.innerHTML = `Nova versão <strong>${result.version}</strong> disponível`;
+    } else {
+      text.textContent = 'Você já está na versão mais recente.';
+    }
     return;
   }
 
   try {
     const res = await fetch('/api/update/check');
     const data = await res.json();
+    btn.disabled = false;
+    btn.textContent = 'Verificar atualizações';
     if (data.updateAvailable) {
       text.innerHTML = `Nova versão <strong>${data.latestVersion}</strong> disponível`;
       document.getElementById('updateBtn').style.display = '';
@@ -246,6 +258,8 @@ async function checkForUpdates() {
       text.textContent = 'Você já está na versão mais recente.';
     }
   } catch {
+    btn.disabled = false;
+    btn.textContent = 'Verificar atualizações';
     text.textContent = 'Erro ao verificar atualizações.';
   }
 }
