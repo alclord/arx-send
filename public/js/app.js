@@ -1,34 +1,44 @@
 const socket = io();
 const isElectron = !!(window.electronAPI && window.electronAPI.isElectron);
 
+let pendingUpdateInfo = null;
+
 if (isElectron && window.electronAPI.onUpdateStatus) {
-  window.electronAPI.onUpdateStatus(({ status, version, progress, message }) => {
+  window.electronAPI.onUpdateStatus(({ status, progress, message, type }) => {
     const text = document.getElementById('updateText');
     const progWrap = document.getElementById('updateProgWrap');
     const progBar = document.getElementById('updateProgBar');
     const pctEl = document.getElementById('updatePct');
     const btn = document.getElementById('updateBtn');
+    const checkBtn = document.getElementById('checkUpdateBtn');
 
-    if (status === 'available') {
-      text.innerHTML = `Nova versão <strong>${version}</strong> disponível — baixando...`;
-      progWrap.style.display = 'none';
-      pctEl.textContent = '';
-      btn.style.display = 'none';
-    } else if (status === 'downloading') {
-      text.innerHTML = `Baixando atualização <strong>${version}</strong>...`;
+    if (status === 'downloading') {
+      checkBtn.style.display = 'none';
+      text.innerHTML = type === 'asar'
+        ? `Baixando atualização leve...`
+        : `Baixando instalador (Electron atualizado)...`;
       progWrap.style.display = '';
       progBar.style.width = progress + '%';
       pctEl.textContent = progress + '%';
       btn.style.display = 'none';
-    } else if (status === 'ready') {
-      text.innerHTML = `✅ Atualização <strong>${version}</strong> pronta para instalar`;
+    } else if (status === 'installing') {
+      text.textContent = message || 'Instalando...';
       progWrap.style.display = 'none';
       pctEl.textContent = '';
-      btn.style.display = '';
+    } else if (status === 'ready') {
+      text.textContent = message || 'Atualização pronta!';
+      progWrap.style.display = 'none';
+      pctEl.textContent = '';
+      btn.style.display = 'none';
+      checkBtn.style.display = 'none';
     } else if (status === 'error') {
       text.textContent = message || 'Erro ao buscar atualização.';
       progWrap.style.display = 'none';
       pctEl.textContent = '';
+      btn.style.display = 'none';
+      checkBtn.style.display = '';
+      checkBtn.disabled = false;
+      checkBtn.textContent = 'Verificar atualizações';
     }
   });
 }
@@ -210,12 +220,17 @@ socket.on('update_status', ({ status, version, progress }) => {
 });
 
 async function installUpdate() {
-  if (!confirm('O aplicativo será fechado para instalar a atualização e reabrirá automaticamente.\n\nDeseja continuar?')) return;
+  if (!pendingUpdateInfo) return;
 
-  if (isElectron && window.electronAPI.installUpdate) {
-    await window.electronAPI.installUpdate();
+  if (isElectron && window.electronAPI.downloadUpdate) {
+    const btn = document.getElementById('updateBtn');
+    btn.disabled = true;
+    btn.textContent = 'Baixando...';
+    await window.electronAPI.downloadUpdate(pendingUpdateInfo);
     return;
   }
+
+  if (!confirm('O aplicativo será fechado para instalar a atualização e reabrirá automaticamente.\n\nDeseja continuar?')) return;
 
   const btn = document.getElementById('updateBtn');
   const text = document.getElementById('updateText');
@@ -230,18 +245,28 @@ async function installUpdate() {
 async function checkForUpdates() {
   const text = document.getElementById('updateText');
   const btn = document.getElementById('checkUpdateBtn');
+  const updateBtn = document.getElementById('updateBtn');
   btn.disabled = true;
   btn.textContent = 'Verificando...';
   text.textContent = 'Verificando atualizações...';
+  updateBtn.style.display = 'none';
 
   if (isElectron && window.electronAPI.checkForUpdates) {
     const result = await window.electronAPI.checkForUpdates();
     btn.disabled = false;
     btn.textContent = 'Verificar atualizações';
     if (result.updateAvailable) {
-      text.innerHTML = `Nova versão <strong>${result.version}</strong> disponível`;
+      pendingUpdateInfo = result;
+      if (result.electronChanged) {
+        text.innerHTML = `Nova versão <strong>${result.version}</strong> disponível (Electron atualizado — instalador completo)`;
+      } else {
+        text.innerHTML = `Nova versão <strong>${result.version}</strong> disponível (atualização leve)`;
+      }
+      updateBtn.style.display = '';
+      updateBtn.textContent = result.electronChanged ? 'Baixar instalador' : 'Baixar e reiniciar';
     } else {
       text.textContent = 'Você já está na versão mais recente.';
+      pendingUpdateInfo = null;
     }
     return;
   }
@@ -253,7 +278,7 @@ async function checkForUpdates() {
     btn.textContent = 'Verificar atualizações';
     if (data.updateAvailable) {
       text.innerHTML = `Nova versão <strong>${data.latestVersion}</strong> disponível`;
-      document.getElementById('updateBtn').style.display = '';
+      updateBtn.style.display = '';
     } else {
       text.textContent = 'Você já está na versão mais recente.';
     }

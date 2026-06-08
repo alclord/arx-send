@@ -27,7 +27,12 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git push *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(dir /s /b)",
+      "Bash(tree /f)",
+      "Bash(dir /s /q)",
+      "Bash(node --test tests/utils.test.js)",
+      "Bash(node -e \"const u = require\\('./src/updater'\\); console.log\\('updater OK:', Object.keys\\(u\\).join\\(', '\\)\\)\")"
     ]
   }
 }

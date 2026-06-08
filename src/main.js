@@ -1,7 +1,7 @@
 const { app, BrowserWindow, shell, Menu, Tray, nativeImage, ipcMain, Notification } = require('electron');
 const path = require('path');
 const http = require('http');
-const { autoUpdater } = require('electron-updater');
+const { AutoUpdater } = require('./updater/autoUpdater');
 
 process.env.ELECTRON_IS_DEV = parseInt(process.env.ELECTRON_IS_DEV || '0', 10);
 const isDev = process.env.ELECTRON_IS_DEV === '1';
@@ -9,6 +9,7 @@ const isDev = process.env.ELECTRON_IS_DEV === '1';
 const PORT = process.env.PORT || 3000;
 let mainWindow = null;
 let tray = null;
+let updater = null;
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -52,6 +53,12 @@ if (!gotLock) {
     });
   }
 
+  function sendUpdateStatus(data) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update_status', data);
+    }
+  }
+
   async function createWindow() {
     mainWindow = new BrowserWindow({
       width: 1280,
@@ -93,35 +100,12 @@ if (!gotLock) {
       return { action: 'allow' };
     });
 
-    autoUpdater.autoDownload = false;
-    autoUpdater.autoInstallOnAppQuit = true;
-
-    autoUpdater.on('update-available', (info) => {
-      mainWindow.webContents.send('update_status', {
-        status: 'available', version: info.version,
-        message: `Nova versão ${info.version} disponível`
-      });
-      autoUpdater.downloadUpdate().catch(() => {});
+    updater = new AutoUpdater({
+      owner: config.GITHUB_OWNER,
+      repo: config.GITHUB_REPO,
+      currentVersion: config.CURRENT_VERSION,
+      onStatus: sendUpdateStatus,
     });
-
-    autoUpdater.on('download-progress', (p) => {
-      mainWindow.webContents.send('update_status', {
-        status: 'downloading', progress: Math.round(p.percent),
-        message: `Baixando... ${Math.round(p.percent)}%`
-      });
-    });
-
-    autoUpdater.on('update-downloaded', (info) => {
-      mainWindow.webContents.send('update_status', {
-        status: 'ready', version: info.version,
-        message: 'Atualização pronta para instalar'
-      });
-    });
-
-    if (!isDev) {
-      setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 5000);
-      setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 6 * 60 * 60 * 1000);
-    }
 
     mainWindow.on('close', (event) => {
       if (!app.isQuitting) {
@@ -180,36 +164,35 @@ if (!gotLock) {
       new Notification({ title, body }).show();
     }
   });
-  ipcMain.handle('install-update', () => {
-    autoUpdater.quitAndInstall();
+  ipcMain.handle('check-for-updates', async () => {
+    if (!updater) return { ok: false, error: 'Updater não inicializado' };
+    try {
+      const result = await updater.check();
+      if (!result.updateAvailable) {
+        return { ok: true, updateAvailable: false };
+      }
+      return {
+        ok: true,
+        updateAvailable: true,
+        version: result.version,
+        electronChanged: result.electronChanged,
+      };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
   });
-  ipcMain.handle('check-for-updates', () => {
-    return new Promise((resolve) => {
-      const onAvailable = (info) => {
-        autoUpdater.removeListener('update-not-available', onNotAvailable);
-        autoUpdater.removeListener('error', onError);
-        resolve({ ok: true, updateAvailable: true, version: info.version });
-      };
-      const onNotAvailable = () => {
-        autoUpdater.removeListener('update-available', onAvailable);
-        autoUpdater.removeListener('error', onError);
-        resolve({ ok: true, updateAvailable: false });
-      };
-      const onError = (err) => {
-        autoUpdater.removeListener('update-available', onAvailable);
-        autoUpdater.removeListener('update-not-available', onNotAvailable);
-        resolve({ ok: false, error: err.message });
-      };
-      autoUpdater.once('update-available', onAvailable);
-      autoUpdater.once('update-not-available', onNotAvailable);
-      autoUpdater.once('error', onError);
-      autoUpdater.checkForUpdates().catch((err) => {
-        autoUpdater.removeListener('update-available', onAvailable);
-        autoUpdater.removeListener('update-not-available', onNotAvailable);
-        autoUpdater.removeListener('error', onError);
-        resolve({ ok: false, error: err.message });
-      });
-    });
+  ipcMain.handle('download-update', async (event, updateInfo) => {
+    if (!updater) return { ok: false, error: 'Updater não inicializado' };
+    try {
+      const result = await updater.downloadAndApply(updateInfo);
+      return { ok: true, ...result };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+  ipcMain.handle('cancel-update', () => {
+    if (updater) updater.abort();
+    return { ok: true };
   });
 
   app.whenReady().then(() => {

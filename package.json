@@ -1,12 +1,12 @@
 {
   "name": "arx-send",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "description": "ARX Send - Disparo em massa via WhatsApp",
   "main": "src/main.js",
   "scripts": {
     "start": "node src/server.js",
     "electron": "electron .",
-    "build": "electron-builder --win",
+    "build": "electron-builder --win && node scripts/copy-asar.js",
     "build:server": "pkg src/server.js --output dist/arx-send-server.exe --compress GZip",
     "test": "node --test tests/utils.test.js"
   },
