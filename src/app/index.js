@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const config = require('./config');
-const { securityHeaders, createRateLimiter } = require('./security');
+const { securityHeaders, createRateLimiter, authMiddleware } = require('./security');
 const { registerSessionRoutes } = require('../routes/sessionRoutes');
 const { registerSendRoutes } = require('../routes/sendRoutes');
 const { registerSheetRoutes } = require('../routes/sheetRoutes');
@@ -10,17 +10,19 @@ const { registerUpdateRoutes } = require('../routes/updateRoutes');
 const { registerUploadRoutes } = require('../routes/uploadRoutes');
 const { registerSocketHandlers } = require('../socket/handlers');
 const { multerErrorHandler } = require('../services/mediaService');
-const { startCleanupIntervals } = require('../services/cleanupService');
+const { startCleanupIntervals, stopCleanupIntervals } = require('../services/cleanupService');
 
 function createApp() {
   const app = express();
 
-  app.use(express.json());
+  app.set('trust proxy', 1);
+  app.use(express.json({ limit: '2mb' }));
   app.use(securityHeaders);
   app.use(express.static(path.join(__dirname, '../../public')));
 
   const apiLimiter = createRateLimiter(60000, 60);
   app.use('/api/', apiLimiter);
+  app.use('/api/', authMiddleware);
 
   return app;
 }
@@ -31,7 +33,6 @@ function registerAllRoutes(app, io) {
   registerSendRoutes(app, io);
   registerSheetRoutes(app);
   registerUpdateRoutes(app, io);
-
   app.use(multerErrorHandler);
 }
 
@@ -49,4 +50,4 @@ function startApp(app, io) {
   return app;
 }
 
-module.exports = { createApp, registerAllRoutes, ensureDirectories, startApp };
+module.exports = { createApp, registerAllRoutes, ensureDirectories, startApp, stopCleanupIntervals };

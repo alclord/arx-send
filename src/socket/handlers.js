@@ -5,10 +5,13 @@ const { updateState } = require('../services/updateService');
 
 function registerSocketHandlers(io) {
   io.on('connection', (socket) => {
+    let currentSessionId = null;
+
     socket.on('join_session', (rawId) => {
       const sessionId = sanitizeSessionId(rawId);
       if (!sessionId) return;
 
+      currentSessionId = sessionId;
       socket.join(`s:${sessionId}`);
       const sess = getSession(sessionId);
 
@@ -31,6 +34,12 @@ function registerSocketHandlers(io) {
         version: updateState.version,
         progress: updateState.progress,
       });
+    });
+
+    socket.on('disconnect', () => {
+      if (currentSessionId) {
+        socket.leave(`s:${currentSessionId}`);
+      }
     });
   });
 }

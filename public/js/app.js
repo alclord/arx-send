@@ -3,6 +3,13 @@ const isElectron = !!(window.electronAPI && window.electronAPI.isElectron);
 
 let pendingUpdateInfo = null;
 
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function setText(el, text) { el.textContent = text; }
+function setHTML(el, html) { el.innerHTML = html; }
+
 if (isElectron && window.electronAPI.onUpdateStatus) {
   window.electronAPI.onUpdateStatus(({ status, progress, message, type }) => {
     const text = document.getElementById('updateText');
@@ -14,54 +21,53 @@ if (isElectron && window.electronAPI.onUpdateStatus) {
 
     if (status === 'downloading') {
       checkBtn.style.display = 'none';
-      text.innerHTML = type === 'asar'
-        ? `Baixando atualização leve...`
-        : `Baixando instalador (Electron atualizado)...`;
+      setText(text, type === 'asar'
+        ? 'Baixando atualização leve...'
+        : 'Baixando instalador (Electron atualizado)...');
       progWrap.style.display = '';
       progBar.style.width = progress + '%';
-      pctEl.textContent = progress + '%';
+      setText(pctEl, progress + '%');
       btn.style.display = 'none';
     } else if (status === 'installing') {
-      text.textContent = message || 'Instalando...';
+      setText(text, message || 'Instalando...');
       progWrap.style.display = 'none';
-      pctEl.textContent = '';
+      setText(pctEl, '');
     } else if (status === 'ready') {
-      text.textContent = message || 'Atualização pronta!';
+      setText(text, message || 'Atualização pronta!');
       progWrap.style.display = 'none';
-      pctEl.textContent = '';
+      setText(pctEl, '');
       btn.style.display = 'none';
       checkBtn.style.display = 'none';
     } else if (status === 'error') {
-      text.textContent = message || 'Erro ao buscar atualização.';
+      setText(text, message || 'Erro ao buscar atualização.');
       progWrap.style.display = 'none';
-      pctEl.textContent = '';
+      setText(pctEl, '');
       btn.style.display = 'none';
       checkBtn.style.display = '';
       checkBtn.disabled = false;
-      checkBtn.textContent = 'Verificar atualizações';
+      setText(checkBtn, 'Verificar atualizações');
     }
   });
 }
 
-// ── Sessão ──
 let sessionId = null;
 
 function enterSession() {
   const raw = document.getElementById('sessionInput').value.trim();
   const id = raw.toLowerCase().replace(/[^a-z0-9_-]/g, '');
   if (!id || id.length < 2) {
-    document.getElementById('loginError').textContent = 'Nome deve ter ao menos 2 caracteres válidos.';
+    setText(document.getElementById('loginError'), 'Nome deve ter ao menos 2 caracteres válidos.');
     return;
   }
   sessionId = id;
   localStorage.setItem('wa_session', id);
   document.getElementById('loginScreen').classList.add('hidden');
-  document.getElementById('sessionBadge').textContent = '# ' + id;
+  setText(document.getElementById('sessionBadge'), '# ' + id);
   socket.emit('join_session', id);
 }
 
 function clearLoginError() {
-  document.getElementById('loginError').textContent = '';
+  setText(document.getElementById('loginError'), '');
 }
 
 function switchSession() {
@@ -80,11 +86,10 @@ if (saved) {
 
 socket.on('session_joined', ({ sessionId: id }) => {
   sessionId = id;
-  document.getElementById('sessionBadge').textContent = '# ' + id;
+  setText(document.getElementById('sessionBadge'), '# ' + id);
   document.getElementById('loginScreen').classList.add('hidden');
 });
 
-// ── Estado ──
 let contacts = [];
 let importedContacts = [];
 let sheetHeaders = [];
@@ -97,7 +102,6 @@ let isSending = false;
 let waStatus = 'disconnected';
 let importFilename = null;
 
-// ── Socket events ──
 socket.on('status', ({ status, message }) => {
   waStatus = status;
   updateStatusUI(status, message);
@@ -109,7 +113,7 @@ socket.on('status', ({ status, message }) => {
     document.getElementById('qrImage').style.display = 'none';
     document.getElementById('qrInstructions').style.display = 'none';
     document.getElementById('qrSteps').style.display = 'none';
-    document.getElementById('qrErrorMsg').textContent = message || 'Falha na conexão.';
+    setText(document.getElementById('qrErrorMsg'), message || 'Falha na conexão.');
     document.getElementById('qrError').classList.add('show');
     document.getElementById('qrModal').classList.add('show');
   }
@@ -137,10 +141,10 @@ socket.on('contacts', ({ contacts: c }) => {
 socket.on('send_start', ({ total }) => {
   isSending = true;
   document.getElementById('progressBox').classList.add('show');
-  document.getElementById('progLog').innerHTML = '';
+  setText(document.getElementById('progLog'), '');
   document.getElementById('progBar').style.width = '0%';
-  document.getElementById('progLabel').textContent = 'Iniciando...';
-  document.getElementById('progCounter').textContent = `0 / ${total}`;
+  setText(document.getElementById('progLabel'), 'Iniciando...');
+  setText(document.getElementById('progCounter'), `0 / ${total}`);
   document.getElementById('sendBtn').style.display = 'none';
   document.getElementById('stopBtn').style.display = '';
 });
@@ -148,10 +152,10 @@ socket.on('send_start', ({ total }) => {
 socket.on('send_progress', ({ index, total, name, status, error }) => {
   const pct = Math.round(((index + 1) / total) * 100);
   document.getElementById('progBar').style.width = pct + '%';
-  document.getElementById('progCounter').textContent = `${index + 1} / ${total}`;
+  setText(document.getElementById('progCounter'), `${index + 1} / ${total}`);
   const log = document.getElementById('progLog');
   if (status === 'sending') {
-    document.getElementById('progLabel').textContent = `Enviando para ${name}...`;
+    setText(document.getElementById('progLabel'), `Enviando para ${name}...`);
     const el = document.createElement('div');
     el.className = 'log-sending'; el.textContent = `⏳ ${name}`; el.id = 'log_' + index;
     log.appendChild(el);
@@ -167,7 +171,7 @@ socket.on('send_progress', ({ index, total, name, status, error }) => {
 
 socket.on('send_done', () => {
   isSending = false;
-  document.getElementById('progLabel').textContent = '✅ Disparo concluído!';
+  setText(document.getElementById('progLabel'), '✅ Disparo concluído!');
   document.getElementById('progBar').style.width = '100%';
   document.getElementById('sendBtn').style.display = '';
   document.getElementById('stopBtn').style.display = 'none';
@@ -179,7 +183,7 @@ socket.on('send_done', () => {
 
 socket.on('send_stopped', () => {
   isSending = false;
-  document.getElementById('progLabel').textContent = '⏹ Parado';
+  setText(document.getElementById('progLabel'), '⏹ Parado');
   document.getElementById('sendBtn').style.display = '';
   document.getElementById('stopBtn').style.display = 'none';
   updateSendBtn();
@@ -195,25 +199,25 @@ socket.on('update_status', ({ status, version, progress }) => {
 
   if (status === 'available') {
     banner.classList.add('show');
-    text.innerHTML = `Nova versão <strong>${version}</strong> disponível — baixando...`;
+    setHTML(text, `Nova versão <strong>${esc(version)}</strong> disponível — baixando...`);
     progWrap.style.display = 'none';
-    pctEl.textContent = '';
+    setText(pctEl, '');
     btn.style.display = 'none';
   } else if (status === 'downloading') {
     banner.classList.add('show');
-    text.innerHTML = `Baixando atualização <strong>${version}</strong>...`;
+    setHTML(text, `Baixando atualização <strong>${esc(version)}</strong>...`);
     progWrap.style.display = '';
     progBar.style.width = progress + '%';
-    pctEl.textContent = progress + '%';
+    setText(pctEl, progress + '%');
     btn.style.display = 'none';
   } else if (status === 'ready') {
     banner.classList.add('show');
-    text.innerHTML = `✅ Atualização <strong>${version}</strong> pronta para instalar`;
+    setHTML(text, `✅ Atualização <strong>${esc(version)}</strong> pronta para instalar`);
     progWrap.style.display = 'none';
-    pctEl.textContent = '';
+    setText(pctEl, '');
     btn.style.display = '';
     btn.disabled = false;
-    btn.textContent = 'Reiniciar e instalar';
+    setText(btn, 'Reiniciar e instalar');
   } else {
     banner.classList.remove('show');
   }
@@ -225,7 +229,7 @@ async function installUpdate() {
   if (isElectron && window.electronAPI.downloadUpdate) {
     const btn = document.getElementById('updateBtn');
     btn.disabled = true;
-    btn.textContent = 'Baixando...';
+    setText(btn, 'Baixando...');
     await window.electronAPI.downloadUpdate(pendingUpdateInfo);
     return;
   }
@@ -235,8 +239,8 @@ async function installUpdate() {
   const btn = document.getElementById('updateBtn');
   const text = document.getElementById('updateText');
   btn.disabled = true;
-  btn.textContent = 'Instalando...';
-  text.textContent = 'Instalando atualização — o app reabrirá em instantes...';
+  setText(btn, 'Instalando...');
+  setText(text, 'Instalando atualização — o app reabrirá em instantes...');
   try {
     await fetch('/api/update/install', { method: 'POST' });
   } catch { }
@@ -247,25 +251,25 @@ async function checkForUpdates() {
   const btn = document.getElementById('checkUpdateBtn');
   const updateBtn = document.getElementById('updateBtn');
   btn.disabled = true;
-  btn.textContent = 'Verificando...';
-  text.textContent = 'Verificando atualizações...';
+  setText(btn, 'Verificando...');
+  setText(text, 'Verificando atualizações...');
   updateBtn.style.display = 'none';
 
   if (isElectron && window.electronAPI.checkForUpdates) {
     const result = await window.electronAPI.checkForUpdates();
     btn.disabled = false;
-    btn.textContent = 'Verificar atualizações';
+    setText(btn, 'Verificar atualizações');
     if (result.updateAvailable) {
       pendingUpdateInfo = result;
       if (result.electronChanged) {
-        text.innerHTML = `Nova versão <strong>${result.version}</strong> disponível (Electron atualizado — instalador completo)`;
+        setHTML(text, `Nova versão <strong>${esc(result.version)}</strong> disponível (Electron atualizado — instalador completo)`);
       } else {
-        text.innerHTML = `Nova versão <strong>${result.version}</strong> disponível (atualização leve)`;
+        setHTML(text, `Nova versão <strong>${esc(result.version)}</strong> disponível (atualização leve)`);
       }
       updateBtn.style.display = '';
-      updateBtn.textContent = result.electronChanged ? 'Baixar instalador' : 'Baixar e reiniciar';
+      setText(updateBtn, result.electronChanged ? 'Baixar instalador' : 'Baixar e reiniciar');
     } else {
-      text.textContent = 'Você já está na versão mais recente.';
+      setText(text, 'Você já está na versão mais recente.');
       pendingUpdateInfo = null;
     }
     return;
@@ -275,30 +279,28 @@ async function checkForUpdates() {
     const res = await fetch('/api/update/check');
     const data = await res.json();
     btn.disabled = false;
-    btn.textContent = 'Verificar atualizações';
+    setText(btn, 'Verificar atualizações');
     if (data.updateAvailable) {
-      text.innerHTML = `Nova versão <strong>${data.latestVersion}</strong> disponível`;
+      setHTML(text, `Nova versão <strong>${esc(data.latestVersion)}</strong> disponível`);
       updateBtn.style.display = '';
     } else {
-      text.textContent = 'Você já está na versão mais recente.';
+      setText(text, 'Você já está na versão mais recente.');
     }
   } catch {
     btn.disabled = false;
-    btn.textContent = 'Verificar atualizações';
-    text.textContent = 'Erro ao verificar atualizações.';
+    setText(btn, 'Verificar atualizações');
+    setText(text, 'Erro ao verificar atualizações.');
   }
 }
 
-// ── API helpers ──
 function api(path, opts) {
   return fetch(`/api/${sessionId}${path}`, opts);
 }
 
-// ── QR ──
 function closeQrModal() { document.getElementById('qrModal').classList.remove('show'); }
 
 function showQrLoading(msg) {
-  document.getElementById('qrLoadingMsg').textContent = msg || 'Abrindo navegador, aguarde...';
+  setText(document.getElementById('qrLoadingMsg'), msg || 'Abrindo navegador, aguarde...');
   document.getElementById('qrLoading').classList.add('show');
   document.getElementById('qrError').classList.remove('show');
   document.getElementById('qrImage').style.display = 'none';
@@ -308,21 +310,20 @@ function showQrLoading(msg) {
   document.getElementById('qrModal').classList.add('show');
 }
 
-// ── UI ──
 function updateStatusUI(status, message) {
   const dot = document.getElementById('statusDot');
   const txt = document.getElementById('statusText');
   const btn = document.getElementById('connectBtn');
   dot.className = 'dot ' + status;
-  txt.textContent = message || status;
+  setText(txt, message || status);
   if (status === 'ready') {
-    btn.textContent = 'Desconectar'; btn.className = 'btn-connect disconnect'; btn.disabled = false;
+    setText(btn, 'Desconectar'); btn.className = 'btn-connect disconnect'; btn.disabled = false;
   } else if (status === 'connecting') {
-    btn.textContent = 'Conectando...'; btn.className = 'btn-connect'; btn.disabled = true;
+    setText(btn, 'Conectando...'); btn.className = 'btn-connect'; btn.disabled = true;
   } else if (status === 'qr') {
-    btn.textContent = 'Novo QR'; btn.className = 'btn-connect'; btn.disabled = false;
+    setText(btn, 'Novo QR'); btn.className = 'btn-connect'; btn.disabled = false;
   } else {
-    btn.textContent = 'Conectar'; btn.className = 'btn-connect'; btn.disabled = false;
+    setText(btn, 'Conectar'); btn.className = 'btn-connect'; btn.disabled = false;
   }
 }
 
@@ -341,7 +342,6 @@ async function reloadContacts() {
   await api('/reload-contacts', { method: 'POST' });
 }
 
-// ── Contacts ──
 function setFilter(f, btn) {
   currentFilter = f;
   document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
@@ -353,7 +353,9 @@ function renderList() {
   const q = document.getElementById('searchInput').value.toLowerCase().trim();
   const list = document.getElementById('contactsList');
   if (!contacts.length) {
-    list.innerHTML = `<div class="empty-state"><div class="icon">${waStatus === 'ready' ? '📭' : '📱'}</div><p>${waStatus === 'ready' ? 'Nenhum contato carregado' : 'Conecte seu WhatsApp<br>para ver seus contatos'}</p></div>`;
+    const icon = waStatus === 'ready' ? '📭' : '📱';
+    const msg = waStatus === 'ready' ? 'Nenhum contato carregado' : 'Conecte seu WhatsApp<br>para ver seus contatos';
+    setHTML(list, `<div class="empty-state"><div class="icon">${icon}</div><p>${msg}</p></div>`);
     return;
   }
   const allContacts = [...importedContacts, ...contacts];
@@ -363,26 +365,63 @@ function renderList() {
     if (q && !c.name.toLowerCase().includes(q)) return false;
     return true;
   });
-  document.getElementById('listCount').textContent = `${filtered.length} itens`;
+  setText(document.getElementById('listCount'), `${filtered.length} itens`);
   if (!filtered.length) {
-    list.innerHTML = `<div class="empty-state"><div class="icon">🔍</div><p>Nenhum resultado para "<em>${esc(q)}</em>"</p></div>`;
+    setHTML(list, `<div class="empty-state"><div class="icon">🔍</div><p>Nenhum resultado para "<em>${esc(q)}</em>"</p></div>`);
     return;
   }
-  list.innerHTML = filtered.map(c => {
+
+  const frag = document.createDocumentFragment();
+  for (const c of filtered) {
     const sel = selectedIds.has(c.id);
-    const badge = c.imported ? '<span class="badge-imported">Planilha</span>'
-      : c.isGroup ? '<span class="badge-group">Grupo</span>' : '';
-    return `<div class="contact-item${sel ? ' selected' : ''}" onclick="toggleContact('${esc(c.id)}')">
-      <div class="cb"><svg viewBox="0 0 12 10" fill="none"><polyline points="1,5 4,8 11,1"/></svg></div>
-      <div class="avatar">${c.name.charAt(0).toUpperCase()}</div>
-      <div class="contact-info">
-        <div class="contact-name">${esc(c.name)}</div>
-        ${c.unread ? `<div class="contact-sub">${c.unread} não lida(s)</div>` : c.imported ? `<div class="contact-sub">${c.id.replace('@c.us', '')}</div>` : ''}
-      </div>
-      ${badge}
-    </div>`;
-  }).join('');
-  document.getElementById('selBadge').textContent = selectedIds.size;
+    const div = document.createElement('div');
+    div.className = 'contact-item' + (sel ? ' selected' : '');
+    div.setAttribute('onclick', `toggleContact('${esc(c.id)}')`);
+
+    const cb = document.createElement('div');
+    cb.className = 'cb';
+    cb.innerHTML = '<svg viewBox="0 0 12 10" fill="none"><polyline points="1,5 4,8 11,1"/></svg>';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'avatar';
+    avatar.textContent = c.name.charAt(0).toUpperCase();
+
+    const info = document.createElement('div');
+    info.className = 'contact-info';
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'contact-name';
+    nameDiv.textContent = c.name;
+    info.appendChild(nameDiv);
+
+    if (c.unread) {
+      const sub = document.createElement('div');
+      sub.className = 'contact-sub';
+      sub.textContent = `${c.unread} não lida(s)`;
+      info.appendChild(sub);
+    } else if (c.imported) {
+      const sub = document.createElement('div');
+      sub.className = 'contact-sub';
+      sub.textContent = c.id.replace('@c.us', '');
+      info.appendChild(sub);
+    }
+
+    div.appendChild(cb);
+    div.appendChild(avatar);
+    div.appendChild(info);
+
+    if (c.imported || c.isGroup) {
+      const badge = document.createElement('span');
+      badge.className = c.imported ? 'badge-imported' : 'badge-group';
+      badge.textContent = c.imported ? 'Planilha' : 'Grupo';
+      div.appendChild(badge);
+    }
+
+    frag.appendChild(div);
+  }
+  list.innerHTML = '';
+  list.appendChild(frag);
+
+  setText(document.getElementById('selBadge'), selectedIds.size);
   updateSendBtn();
 }
 
@@ -405,7 +444,6 @@ function selectAll() {
 
 function deselectAll() { selectedIds.clear(); renderList(); updateSendBtn(); }
 
-// ── Mode & Delay ──
 function setMode(mode, btn) {
   sendMode = mode;
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
@@ -420,16 +458,15 @@ document.querySelectorAll('.delay-opt').forEach(btn => {
     document.querySelectorAll('.delay-opt').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     selectedDelay = parseInt(btn.dataset.v);
-    document.getElementById('sumDelay').textContent = btn.textContent;
+    setText(document.getElementById('sumDelay'), btn.textContent);
   });
 });
 
 document.getElementById('msgText').addEventListener('input', function () {
-  document.getElementById('charCount').textContent = this.value.length + ' caracteres';
+  setText(document.getElementById('charCount'), this.value.length + ' caracteres');
   updateSendBtn();
 });
 
-// ── File ──
 const fileInput = document.getElementById('fileInput');
 const fileZone = document.getElementById('fileZone');
 
@@ -448,10 +485,18 @@ async function handleFile(file) {
   const data = await res.json();
   if (!data.ok) { alert('Erro ao enviar arquivo: ' + data.error); return; }
   uploadedFile = data;
-  document.getElementById('fileName').textContent = data.original;
-  document.getElementById('fileSize').textContent = formatBytes(data.size);
+  setText(document.getElementById('fileName'), data.original);
+  setText(document.getElementById('fileSize'), formatBytes(data.size));
   const thumb = document.getElementById('fileThumb');
-  thumb.innerHTML = data.mimetype.startsWith('image/') ? `<img src="${data.path}" alt="preview"/>` : fileIcon(data.mimetype, data.original);
+  thumb.innerHTML = '';
+  if (data.mimetype.startsWith('image/')) {
+    const img = document.createElement('img');
+    img.src = data.path;
+    img.alt = 'preview';
+    thumb.appendChild(img);
+  } else {
+    thumb.textContent = fileIcon(data.mimetype, data.original);
+  }
   document.getElementById('filePreview').classList.add('show');
   document.getElementById('fileZone').style.display = 'none';
   updateSendBtn();
@@ -464,7 +509,6 @@ function removeFile() {
   updateSendBtn();
 }
 
-// ── Tabs ──
 function switchTab(tab, btn) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -474,12 +518,11 @@ function switchTab(tab, btn) {
 }
 
 function updateSummary() {
-  document.getElementById('sumContacts').textContent = selectedIds.size;
-  document.getElementById('sumMsg').textContent = sendMode === 'file' ? '(sem texto)' : (document.getElementById('msgText').value.trim() || '—');
-  document.getElementById('sumFile').textContent = uploadedFile ? uploadedFile.original : '—';
+  setText(document.getElementById('sumContacts'), selectedIds.size);
+  setText(document.getElementById('sumMsg'), sendMode === 'file' ? '(sem texto)' : (document.getElementById('msgText').value.trim() || '—'));
+  setText(document.getElementById('sumFile'), uploadedFile ? uploadedFile.original : '—');
 }
 
-// ── Send ──
 function updateSendBtn() {
   const hasText = document.getElementById('msgText').value.trim().length > 0;
   const hasContent = sendMode === 'text' ? hasText : sendMode === 'file' ? !!uploadedFile : hasText && !!uploadedFile;
@@ -508,18 +551,17 @@ async function startSend() {
     });
     const data = await res.json();
     if (!data.ok) {
-      document.getElementById('progLabel').textContent = '❌ ' + (data.error || 'Erro ao iniciar disparo');
+      setText(document.getElementById('progLabel'), '❌ ' + (data.error || 'Erro ao iniciar disparo'));
       document.getElementById('progressBox').classList.add('show');
     }
   } catch (e) {
-    document.getElementById('progLabel').textContent = '❌ Erro de comunicação: ' + e.message;
+    setText(document.getElementById('progLabel'), '❌ Erro de comunicação: ' + e.message);
     document.getElementById('progressBox').classList.add('show');
   }
 }
 
 async function stopSend() { await api('/stop', { method: 'POST' }); }
 
-// ── Helpers ──
 function fileIcon(mime, name) {
   if (mime.startsWith('image/')) return '🖼️';
   if (mime.startsWith('video/')) return '🎥';
@@ -534,19 +576,20 @@ function formatBytes(b) {
   if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
   return (b / 1048576).toFixed(1) + ' MB';
 }
-function esc(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
 
-// ── Variáveis da planilha ──
 function updateVarsBar() {
   const section = document.getElementById('varsSection');
   const bar = document.getElementById('varsBar');
   if (!sheetHeaders.length) { section.style.display = 'none'; return; }
   section.style.display = '';
-  bar.innerHTML = sheetHeaders.map(h =>
-    `<button class="var-btn" onclick="insertVar('${esc(h)}')">${esc(h)}</button>`
-  ).join('');
+  bar.innerHTML = '';
+  sheetHeaders.forEach(h => {
+    const btn = document.createElement('button');
+    btn.className = 'var-btn';
+    btn.textContent = h;
+    btn.setAttribute('onclick', `insertVar('${esc(h)}')`);
+    bar.appendChild(btn);
+  });
   updateMsgPreview();
 }
 
@@ -565,21 +608,20 @@ function updateMsgPreview() {
   const previewEl = document.getElementById('msgPreview');
   if (!previewEl) return;
   const firstImported = importedContacts[0];
-  if (!firstImported?.rowData) { previewEl.textContent = '—'; return; }
+  if (!firstImported?.rowData) { setText(previewEl, '—'); return; }
   const template = document.getElementById('msgText').value;
-  if (!template.trim()) { previewEl.textContent = '—'; return; }
+  if (!template.trim()) { setText(previewEl, '—'); return; }
   const preview = template.replace(/\{\{([^}]+)\}\}/g, (_, key) => {
     const val = firstImported.rowData[key.trim()];
     return val !== undefined ? `[${val}]` : `{{${key.trim()}}}`;
   });
-  previewEl.textContent = preview;
+  setText(previewEl, preview);
 }
 
-// ── Import Planilha ──
 function openImportModal() {
   importFilename = null;
   document.getElementById('importFileInput').value = '';
-  document.getElementById('importFileError').textContent = '';
+  setText(document.getElementById('importFileError'), '');
   document.getElementById('importFileZone').classList.remove('drag');
   showImportStep(1);
   document.getElementById('importModal').classList.add('show');
@@ -613,16 +655,16 @@ async function handleImportFile(file) {
   const allowed = ['.xlsx', '.xls', '.csv'];
   const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
   if (!allowed.includes(ext)) {
-    document.getElementById('importFileError').textContent = 'Formato inválido. Use .xlsx, .xls ou .csv';
+    setText(document.getElementById('importFileError'), 'Formato inválido. Use .xlsx, .xls ou .csv');
     return;
   }
-  document.getElementById('importFileError').textContent = 'Lendo arquivo...';
+  setText(document.getElementById('importFileError'), 'Lendo arquivo...');
   const fd = new FormData();
   fd.append('file', file);
   const r = await api('/parse-sheet', { method: 'POST', body: fd });
   const data = await r.json();
   if (!data.ok) {
-    document.getElementById('importFileError').textContent = data.error || 'Erro ao ler arquivo';
+    setText(document.getElementById('importFileError'), data.error || 'Erro ao ler arquivo');
     return;
   }
   importFilename = data.filename;
@@ -633,9 +675,25 @@ async function handleImportFile(file) {
 function buildImportStep2(headers, preview) {
   const phoneEl = document.getElementById('importPhoneCol');
   const nameEl = document.getElementById('importNameCol');
-  phoneEl.innerHTML = headers.map((h, i) => `<option value="${i}">${h || 'Coluna ' + (i + 1)}</option>`).join('');
-  nameEl.innerHTML = '<option value="">— nenhuma —</option>' +
-    headers.map((h, i) => `<option value="${i}">${h || 'Coluna ' + (i + 1)}</option>`).join('');
+  phoneEl.innerHTML = '';
+  nameEl.innerHTML = '';
+
+  const noneOpt = document.createElement('option');
+  noneOpt.value = '';
+  noneOpt.textContent = '— nenhuma —';
+  nameEl.appendChild(noneOpt);
+
+  headers.forEach((h, i) => {
+    const opt1 = document.createElement('option');
+    opt1.value = i;
+    opt1.textContent = h || 'Coluna ' + (i + 1);
+    phoneEl.appendChild(opt1);
+
+    const opt2 = document.createElement('option');
+    opt2.value = i;
+    opt2.textContent = h || 'Coluna ' + (i + 1);
+    nameEl.appendChild(opt2);
+  });
 
   const guess = headers.findIndex(h => /tel|fone|celular|whatsapp|number|phone/i.test(h));
   if (guess >= 0) phoneEl.value = guess;
@@ -643,11 +701,28 @@ function buildImportStep2(headers, preview) {
   const guessName = headers.findIndex(h => /nome|name|cliente|contato/i.test(h));
   if (guessName >= 0) nameEl.value = guessName;
 
-  const previewHtml = `<table>
-    <tr>${headers.map(h => `<th>${esc(h || '—')}</th>`).join('')}</tr>
-    ${preview.map(row => `<tr>${row.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`).join('')}
-  </table>`;
-  document.getElementById('importPreview').innerHTML = previewHtml;
+  const table = document.createElement('table');
+  const thead = document.createElement('tr');
+  headers.forEach(h => {
+    const th = document.createElement('th');
+    th.textContent = h || '—';
+    thead.appendChild(th);
+  });
+  table.appendChild(thead);
+
+  preview.forEach(row => {
+    const tr = document.createElement('tr');
+    row.forEach(v => {
+      const td = document.createElement('td');
+      td.textContent = v;
+      tr.appendChild(td);
+    });
+    table.appendChild(tr);
+  });
+
+  const previewEl = document.getElementById('importPreview');
+  previewEl.innerHTML = '';
+  previewEl.appendChild(table);
 }
 
 async function confirmImport() {
@@ -656,7 +731,7 @@ async function confirmImport() {
   const nameCol = document.getElementById('importNameCol').value;
   const btn = document.getElementById('importOkBtn');
   btn.disabled = true;
-  btn.textContent = 'Importando...';
+  setText(btn, 'Importando...');
 
   const r = await api('/extract-phones', {
     method: 'POST',
@@ -665,7 +740,7 @@ async function confirmImport() {
   });
   const data = await r.json();
   btn.disabled = false;
-  btn.textContent = 'Importar contatos';
+  setText(btn, 'Importar contatos');
 
   if (!data.ok) { alert('Erro: ' + data.error); return; }
 

@@ -228,6 +228,12 @@ function cleanStaleSessions() {
   }
 }
 
+async function destroyAllSessions() {
+  for (const id of Object.keys(sessions)) {
+    await destroySession(id);
+  }
+}
+
 module.exports = {
   sessions,
   getSession,
@@ -236,6 +242,7 @@ module.exports = {
   connectSession,
   loadContacts,
   destroySession,
+  destroyAllSessions,
   cleanStaleSessions,
   emit,
 };

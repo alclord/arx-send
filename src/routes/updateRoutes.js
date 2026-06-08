@@ -1,5 +1,6 @@
 const { spawn } = require('child_process');
 const fs = require('fs');
+const path = require('path');
 const config = require('../app/config');
 const { updateState, emitUpdateStatus, downloadUpdate } = require('../services/updateService');
 const { sessions } = require('../services/sessionService');
@@ -16,11 +17,16 @@ function registerUpdateRoutes(app, io) {
 
   app.post('/api/update/install', async (req, res) => {
     if (updateState.status !== 'ready' || !updateState.filePath) {
-      return res.status(400).json({ error: 'Nenhuma atualiza\u00e7\u00e3o pronta para instalar' });
+      return res.status(400).json({ error: 'Nenhuma atualização pronta para instalar' });
+    }
+
+    const normalized = path.resolve(updateState.filePath);
+    if (normalized !== path.resolve(config.tmpDir, path.basename(normalized))) {
+      return res.status(400).json({ error: 'Caminho de arquivo inválido' });
     }
 
     try {
-      await fs.promises.access(updateState.filePath);
+      await fs.promises.access(normalized, fs.constants.R_OK);
     } catch {
       updateState.status = 'available';
       updateState.filePath = null;
@@ -38,9 +44,10 @@ function registerUpdateRoutes(app, io) {
 
     setTimeout(() => {
       try {
-        spawn(updateState.filePath, ['/VERYSILENT', '/CLOSEAPPLICATIONS'], {
+        spawn(normalized, ['/VERYSILENT', '/CLOSEAPPLICATIONS'], {
           detached: true,
           stdio: 'ignore',
+          shell: false,
         }).unref();
       } catch (err) {
         console.error('[update] Falha ao iniciar installer:', err.message);

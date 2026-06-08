@@ -3,6 +3,8 @@ const path = require('path');
 const config = require('../app/config');
 const { cleanStaleSessions } = require('./sessionService');
 
+const intervals = [];
+
 async function cleanOrphanedUploads() {
   const cutoff = Date.now() - config.ORPHAN_FILE_AGE_MS;
   try {
@@ -23,8 +25,13 @@ async function cleanOrphanedUploads() {
 
 function startCleanupIntervals() {
   cleanOrphanedUploads();
-  setInterval(cleanOrphanedUploads, config.CLEANUP_INTERVAL_MS);
-  setInterval(cleanStaleSessions, config.CLEANUP_INTERVAL_MS);
+  intervals.push(setInterval(cleanOrphanedUploads, config.CLEANUP_INTERVAL_MS));
+  intervals.push(setInterval(cleanStaleSessions, config.CLEANUP_INTERVAL_MS));
 }
 
-module.exports = { cleanOrphanedUploads, startCleanupIntervals };
+function stopCleanupIntervals() {
+  intervals.forEach(id => clearInterval(id));
+  intervals.length = 0;
+}
+
+module.exports = { cleanOrphanedUploads, startCleanupIntervals, stopCleanupIntervals };

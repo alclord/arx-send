@@ -32,6 +32,8 @@ const ALLOWED_UPLOAD_EXTS = new Set([
   '.pdf','.doc','.docx','.xls','.xlsx','.ppt','.pptx','.zip','.txt'
 ]);
 
+const tmpDir = require('os').tmpdir();
+
 const appDataBase = IS_PKG
   ? path.join(process.env.LOCALAPPDATA || os.homedir(), APP_NAME)
   : IS_ELECTRON
@@ -52,6 +54,6 @@ module.exports = {
   CONTACT_LOAD_RETRIES, WATCHDOG_TIMEOUT_MS,
   ORPHAN_FILE_AGE_MS, CLEANUP_INTERVAL_MS,
   UPDATE_CHECK_INITIAL_MS, UPDATE_CHECK_INTERVAL_MS,
-  ALLOWED_UPLOAD_EXTS,
+  ALLOWED_UPLOAD_EXTS, tmpDir,
   appDataBase, uploadsDir, cacheDir, sessionDir
 };

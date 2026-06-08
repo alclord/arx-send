@@ -25,9 +25,10 @@ if (!gotLock) {
 
   Menu.setApplicationMenu(null);
 
-  const { createApp, startApp } = require('./app');
+  const { createApp, startApp, stopCleanupIntervals } = require('./app');
   const { createHTTPServer } = require('./app/http');
   const config = require('./app/config');
+  const { destroyAllSessions } = require('./services/sessionService');
 
   const appExpress = createApp();
   const { server, io } = createHTTPServer(appExpress);
@@ -57,6 +58,11 @@ if (!gotLock) {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('update_status', data);
     }
+  }
+
+  async function gracefulShutdown() {
+    stopCleanupIntervals();
+    await destroyAllSessions();
   }
 
   async function createWindow() {
@@ -107,7 +113,7 @@ if (!gotLock) {
       onStatus: sendUpdateStatus,
     });
 
-    mainWindow.on('close', (event) => {
+    mainWindow.on('close', async (event) => {
       if (!app.isQuitting) {
         event.preventDefault();
         mainWindow.hide();
@@ -138,8 +144,9 @@ if (!gotLock) {
       { type: 'separator' },
       {
         label: 'Sair',
-        click: () => {
+        click: async () => {
           app.isQuitting = true;
+          await gracefulShutdown();
           app.quit();
         }
       }
@@ -155,10 +162,6 @@ if (!gotLock) {
   }
 
   ipcMain.handle('get-app-version', () => config.CURRENT_VERSION);
-  ipcMain.handle('get-auth-token', () => {
-    const { AUTH_TOKEN } = require('./app/security');
-    return AUTH_TOKEN;
-  });
   ipcMain.handle('show-notification', (event, { title, body }) => {
     if (Notification.isSupported()) {
       new Notification({ title, body }).show();
@@ -211,5 +214,10 @@ if (!gotLock) {
       mainWindow.show();
       mainWindow.focus();
     }
+  });
+
+  app.on('before-quit', async () => {
+    app.isQuitting = true;
+    await gracefulShutdown();
   });
 }

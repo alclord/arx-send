@@ -18,13 +18,16 @@ function registerUploadRoutes(app) {
 
   app.get('/uploads/:file', async (req, res) => {
     const filename = path.basename(req.params.file);
-    const filePath = path.join(config.uploadsDir, filename);
+    const filePath = path.resolve(config.uploadsDir, filename);
+    if (filePath !== path.resolve(config.uploadsDir, path.basename(filename))) {
+      return res.status(400).end();
+    }
     try {
-      await fs.promises.access(filePath);
+      await fs.promises.access(filePath, fs.constants.R_OK);
     } catch {
       return res.status(404).end();
     }
-    res.sendFile(filename, { root: config.uploadsDir }, (err) => {
+    res.sendFile(filePath, (err) => {
       if (err && !res.headersSent) res.status(500).end();
     });
   });
