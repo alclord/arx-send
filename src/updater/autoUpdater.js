@@ -170,17 +170,26 @@ class AutoUpdater {
 
     const url = asset.browser_download_url;
     return new Promise((resolve, reject) => {
-      const req = https.get(url, { headers: { 'User-Agent': 'arx-send-updater' } }, (res) => {
-        let data = '';
-        res.on('data', chunk => data += chunk);
-        res.on('end', () => {
-          try { resolve(JSON.parse(data)); }
-          catch { reject(new Error('release.json inválido')); }
+      const follow = (currentUrl) => {
+        const req = https.get(currentUrl, { headers: { 'User-Agent': 'arx-send-updater' } }, (res) => {
+          if ([301, 302, 303, 307, 308].includes(res.statusCode)) {
+            return follow(res.headers.location);
+          }
+          if (res.statusCode !== 200) {
+            return reject(new Error(`release.json: HTTP ${res.statusCode}`));
+          }
+          let data = '';
+          res.on('data', chunk => data += chunk);
+          res.on('end', () => {
+            try { resolve(JSON.parse(data)); }
+            catch { reject(new Error('release.json inválido')); }
+          });
+          res.on('error', reject);
         });
-        res.on('error', reject);
-      });
-      req.setTimeout(15000, () => { req.destroy(); reject(new Error('Timeout')); });
-      req.on('error', reject);
+        req.setTimeout(15000, () => { req.destroy(); reject(new Error('Timeout')); });
+        req.on('error', reject);
+      };
+      follow(url);
     });
   }
 

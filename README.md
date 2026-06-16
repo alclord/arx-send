@@ -143,7 +143,8 @@ Os testes cobrem as funções críticas em `src/utils/helpers.js` usando o runne
 
 | Versão | Destaque |
 |---|---|
-| **2.0.0** | Múltiplos telefones por sessão (até 10), seletor de chip no disparo, fix do QR code |
+| **2.0.1** | Fix do auto-updater (seguimento de redirect do GitHub ao baixar release.json) |
+| 2.0.0 | Múltiplos telefones por sessão (até 10), seletor de chip no disparo, fix do QR code |
 | 1.3.0 | Auto-updater customizado (asar-only) |
 | 1.2.2 | Testes do auto-updater |
 | 1.2.1 | Fix EADDRINUSE ao abrir segunda instância |
