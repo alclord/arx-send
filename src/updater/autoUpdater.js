@@ -2,10 +2,21 @@ const https = require('https');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { app, shell } = require('electron');
 const { isNewerVersion } = require('./index');
 
 const GITHUB_API = 'https://api.github.com';
+
+function computeSha256(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', chunk => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', reject);
+  });
+}
 
 class AutoUpdater {
   constructor({ owner, repo, currentVersion, onStatus }) {
@@ -48,7 +59,7 @@ class AutoUpdater {
     const { release, releaseJson, electronChanged } = updateInfo;
 
     if (electronChanged) {
-      return this._downloadInstaller(release);
+      return this._downloadInstaller(release, releaseJson);
     } else {
       return this._downloadAsar(release, releaseJson);
     }
@@ -66,6 +77,17 @@ class AutoUpdater {
     });
 
     if (this._aborted) { fs.unlinkSync(tmpPath); return { applied: false }; }
+
+    // Verify SHA-256 if provided in release.json
+    const expectedHash = releaseJson?.sha256?.['app.asar'];
+    if (expectedHash) {
+      this.onStatus({ status: 'installing', message: 'Verificando integridade...' });
+      const actualHash = await computeSha256(tmpPath);
+      if (actualHash !== expectedHash.toLowerCase()) {
+        fs.unlinkSync(tmpPath);
+        throw new Error('Falha na verificação de integridade (SHA-256 inválido). Tente novamente.');
+      }
+    }
 
     const resourcesPath = process.resourcesPath || path.join(app.getAppPath(), '..');
     const destPath = path.join(resourcesPath, 'app.asar');
@@ -88,7 +110,7 @@ class AutoUpdater {
     return { applied: true };
   }
 
-  async _downloadInstaller(release) {
+  async _downloadInstaller(release, releaseJson) {
     const exeAsset = release.assets.find(a => a.name.endsWith('.exe'));
     if (!exeAsset) throw new Error('Installer not found in release');
 
@@ -100,6 +122,17 @@ class AutoUpdater {
     });
 
     if (this._aborted) { fs.unlinkSync(tmpPath); return { applied: false }; }
+
+    // Verify SHA-256 if provided in release.json
+    const expectedHash = releaseJson?.sha256?.[exeAsset.name];
+    if (expectedHash) {
+      this.onStatus({ status: 'installing', message: 'Verificando integridade do instalador...' });
+      const actualHash = await computeSha256(tmpPath);
+      if (actualHash !== expectedHash.toLowerCase()) {
+        fs.unlinkSync(tmpPath);
+        throw new Error('Falha na verificação de integridade do instalador (SHA-256 inválido). Tente novamente.');
+      }
+    }
 
     this.onStatus({ status: 'ready', message: 'Instalador baixado. Iniciando instalação...' });
 

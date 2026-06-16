@@ -16,7 +16,7 @@ const SESSION_ID_MAX_LENGTH = 30;
 const MIN_SEND_DELAY_MS = 1500;
 const DEFAULT_SEND_DELAY_MS = 3000;
 const MAX_CONTACTS_PER_SEND = 5000;
-const MAX_FILE_SIZE_BYTES = 64 * 1024 * 1024;
+const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024;
 const MAX_SHEET_ROWS = 10001;
 const CONTACT_LOAD_RETRIES = 8;
 const WATCHDOG_TIMEOUT_MS = 180000;
@@ -24,6 +24,17 @@ const ORPHAN_FILE_AGE_MS = 2 * 60 * 60 * 1000;
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 const UPDATE_CHECK_INITIAL_MS = 30 * 1000;
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const SESSION_TTL_MS = 4 * 60 * 60 * 1000;
+const SEND_MAX_RETRIES = 3;
+const SEND_RETRY_BASE_MS = 2000;
+
+// WhatsApp per-type file size limits (bytes)
+const WA_FILE_LIMITS = {
+  image: 16 * 1024 * 1024,
+  video: 64 * 1024 * 1024,
+  audio: 16 * 1024 * 1024,
+  document: 100 * 1024 * 1024,
+};
 
 const ALLOWED_UPLOAD_EXTS = new Set([
   '.jpg','.jpeg','.png','.gif','.webp','.bmp',
@@ -54,6 +65,7 @@ module.exports = {
   CONTACT_LOAD_RETRIES, WATCHDOG_TIMEOUT_MS,
   ORPHAN_FILE_AGE_MS, CLEANUP_INTERVAL_MS,
   UPDATE_CHECK_INITIAL_MS, UPDATE_CHECK_INTERVAL_MS,
-  ALLOWED_UPLOAD_EXTS, tmpDir,
+  SESSION_TTL_MS, SEND_MAX_RETRIES, SEND_RETRY_BASE_MS,
+  WA_FILE_LIMITS, ALLOWED_UPLOAD_EXTS, tmpDir,
   appDataBase, uploadsDir, cacheDir, sessionDir
 };

@@ -1,6 +1,6 @@
 const config = require('../app/config');
 const { sanitizeSessionId } = require('../utils/helpers');
-const { getSession } = require('../services/sessionService');
+const { getSession, phonesListPayload } = require('../services/sessionService');
 const { updateState } = require('../services/updateService');
 
 function registerSocketHandlers(io) {
@@ -16,16 +16,13 @@ function registerSocketHandlers(io) {
       const sess = getSession(sessionId);
 
       socket.emit('session_joined', { sessionId });
-      socket.emit('status', {
-        status: sess.status,
-        message: sess.status === 'ready' ? `Pronto — ${sess.contacts.length} conversas carregadas`
-               : sess.status === 'connecting' ? 'Conectando...'
-               : sess.status === 'qr' ? 'Aguardando leitura do QR code...'
-               : 'Desconectado'
-      });
+      socket.emit('phones_list', { phones: phonesListPayload(sess) });
 
-      if (sess.contacts.length > 0) {
-        socket.emit('contacts', { contacts: sess.contacts });
+      // Emite contatos em cache de cada telefone pronto
+      for (const phone of Object.values(sess.phones)) {
+        if (phone.contacts.length > 0) {
+          socket.emit('phone_contacts', { phoneId: phone.id, contacts: phone.contacts });
+        }
       }
 
       socket.emit('update_status', {

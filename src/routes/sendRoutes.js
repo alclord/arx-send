@@ -12,19 +12,23 @@ function registerSendRoutes(app, io) {
     const sess = req.sess;
     const sid = req.sessionId;
 
-    if (sess.status !== 'ready') return res.status(400).json({ error: 'WhatsApp n\u00e3o conectado' });
-    if (sess.isSending) return res.status(400).json({ error: 'Envio j\u00e1 em andamento' });
+    if (sess.isSending) return res.status(400).json({ error: 'Envio já em andamento' });
 
-    const { contactIds, message, filename, delayMs, contactsData } = req.body;
+    const { contactIds, message, filename, delayMs, contactsData, phoneId } = req.body;
+
+    if (!phoneId) return res.status(400).json({ error: 'Telefone não selecionado' });
+    const phone = sess.phones[phoneId];
+    if (!phone || phone.status !== 'ready') return res.status(400).json({ error: 'Telefone não conectado' });
+
     if (!contactIds?.length) return res.status(400).json({ error: 'Nenhum contato selecionado' });
     if (contactIds.length > config.MAX_CONTACTS_PER_SEND) {
-      return res.status(400).json({ error: `M\u00e1ximo de ${config.MAX_CONTACTS_PER_SEND} contatos por envio` });
+      return res.status(400).json({ error: `Máximo de ${config.MAX_CONTACTS_PER_SEND} contatos por envio` });
     }
-    if (!message?.trim() && !filename) return res.status(400).json({ error: 'Mensagem ou arquivo obrigat\u00f3rio' });
+    if (!message?.trim() && !filename) return res.status(400).json({ error: 'Mensagem ou arquivo obrigatório' });
 
     res.json({ ok: true, message: 'Envio iniciado' });
 
-    sendMessages(sid, io, { contactIds, message, filename, delayMs, contactsData }).catch(err => {
+    sendMessages(sid, io, { contactIds, message, filename, delayMs, contactsData, phoneId }).catch(err => {
       console.error(`[${sid}] Erro no envio:`, err.message);
     });
   });

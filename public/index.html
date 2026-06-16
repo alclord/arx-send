@@ -39,11 +39,10 @@
   </div>
   <button class="session-badge" id="sessionBadge" onclick="switchSession()" title="Trocar sessão"></button>
   <div class="conn-area">
-    <div class="status-badge">
-      <div class="dot" id="statusDot"></div>
-      <span id="statusText">Desconectado</span>
+    <div class="phones-summary" id="phonesSummary">
+      <span id="phonesSummaryText">Nenhum telefone</span>
     </div>
-    <button class="btn-connect" id="connectBtn" onclick="toggleConnect()">Conectar</button>
+    <button class="btn-connect" onclick="openPhonesModal()">📱 Gerenciar</button>
   </div>
 </header>
 
@@ -70,6 +69,11 @@
         <button class="icon-btn" onclick="reloadContacts()" title="Recarregar">↻</button>
       </div>
     </div>
+    <!-- Seletor de telefone para visualizar contatos -->
+    <div class="phone-source-bar" id="phoneSourceBar" style="display:none">
+      <span class="phone-source-label">Ver contatos de:</span>
+      <select id="phoneSourceSelect" onchange="onPhoneSourceChange()"></select>
+    </div>
     <div class="search-bar">
       <input type="text" id="searchInput" placeholder="🔍  Filtrar contatos e grupos..." oninput="renderList()"/>
     </div>
@@ -88,7 +92,7 @@
     <div class="contacts-list" id="contactsList">
       <div class="empty-state">
         <div class="icon">📱</div>
-        <p>Conecte seu WhatsApp<br>para ver seus contatos</p>
+        <p>Adicione e conecte um telefone<br>para ver seus contatos</p>
       </div>
     </div>
   </div>
@@ -120,7 +124,12 @@
         <div id="varsSection" style="display:none">
           <div class="field-label" style="margin-top:10px">Variáveis disponíveis — clique para inserir</div>
           <div class="vars-bar" id="varsBar"></div>
-          <div class="field-label" style="margin-top:10px">Preview (1º contato importado)</div>
+          <div class="preview-header">
+            <div class="field-label">Preview</div>
+            <select class="preview-select" id="previewContactSelect" onchange="updateMsgPreview()">
+              <option value="0">1º contato</option>
+            </select>
+          </div>
           <div class="msg-preview" id="msgPreview">—</div>
         </div>
       </div>
@@ -156,6 +165,13 @@
     </div>
 
     <div class="tab-content" id="tab-send">
+      <!-- Seletor de telefone para envio -->
+      <div class="send-phone-row">
+        <div class="field-label">Enviar de</div>
+        <select id="phoneSelectorSend" onchange="onSendPhoneChange()">
+          <option value="">— Selecione um telefone conectado —</option>
+        </select>
+      </div>
       <div class="send-sticky">
         <button class="btn-primary" id="sendBtn" onclick="startSend()" disabled>🚀 Iniciar Disparo</button>
         <button class="btn-stop"    id="stopBtn" onclick="stopSend()">⏹ Parar</button>
@@ -165,6 +181,7 @@
         <div class="summary-row"><span>Intervalo</span><span id="sumDelay">3s</span></div>
         <div class="summary-row"><span>Mensagem</span><span id="sumMsg">—</span></div>
         <div class="summary-row"><span>Arquivo</span><span id="sumFile">—</span></div>
+        <div class="summary-row"><span>Telefone</span><span id="sumPhone">—</span></div>
       </div>
       <div class="progress-box" id="progressBox">
         <div class="progress-header">
@@ -184,8 +201,6 @@
     <button class="qr-close" onclick="closeImportModal()">×</button>
     <h2>📊 Importar Planilha</h2>
     <p class="import-sub">Importe contatos de um arquivo Excel ou CSV</p>
-
-    <!-- Step 1: upload -->
     <div class="import-step active" id="importStep1">
       <div class="import-file-zone" id="importFileZone">
         <input type="file" id="importFileInput" accept=".xlsx,.xls,.csv"/>
@@ -194,8 +209,6 @@
       </div>
       <div id="importFileError" style="font-size:12px;color:var(--red);margin-top:8px;min-height:16px"></div>
     </div>
-
-    <!-- Step 2: column selector -->
     <div class="import-step" id="importStep2">
       <div class="import-col-row">
         <div>
@@ -216,18 +229,38 @@
   </div>
 </div>
 
+<!-- PHONES MODAL -->
+<div id="phonesModal">
+  <div class="phones-card">
+    <div class="phones-card-header">
+      <h2>📱 Telefones</h2>
+      <span id="phonesModalCount" class="phones-modal-count">0 / 10</span>
+      <button class="qr-close" onclick="closePhonesModal()">×</button>
+    </div>
+    <div id="phonesListEl" class="phones-list-el"></div>
+    <div class="phones-add-area">
+      <input type="text" id="phoneNameInput" placeholder="Nome do telefone (ex: Celular Yuri)" maxlength="50"
+        onkeydown="if(event.key==='Enter') doAddPhone()"/>
+      <button class="btn-add-phone" id="btnAddPhone" onclick="doAddPhone()">＋ Adicionar</button>
+    </div>
+    <div class="phones-limit-note" id="phonesLimitNote" style="display:none">
+      Limite de 10 telefones por sessão atingido.
+    </div>
+  </div>
+</div>
+
 <!-- QR MODAL -->
 <div id="qrModal">
   <div class="qr-card">
     <button class="qr-close" onclick="closeQrModal()" title="Fechar">&#x2715;</button>
-    <h2>Conectar WhatsApp</h2>
+    <h2 id="qrModalTitle">Conectar WhatsApp</h2>
     <div id="qrLoading">
       <div class="spinner"></div>
       <span id="qrLoadingMsg">Abrindo navegador, aguarde...</span>
     </div>
     <div id="qrError">
       <span id="qrErrorMsg">Falha na conexão.</span>
-      <button class="btn-primary" style="padding:8px 20px;font-size:13px" onclick="toggleConnect()">Tentar novamente</button>
+      <button class="btn-primary" style="padding:8px 20px;font-size:13px" onclick="retryCurrentPhone()">Tentar novamente</button>
     </div>
     <p id="qrInstructions" style="display:none">Escaneie o QR code abaixo com seu celular</p>
     <img id="qrImage" src="" alt="QR Code" style="display:none"/>

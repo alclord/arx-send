@@ -50,6 +50,7 @@ if (isElectron && window.electronAPI.onUpdateStatus) {
   });
 }
 
+// ── Sessão ──
 let sessionId = null;
 
 function enterSession() {
@@ -90,6 +91,14 @@ socket.on('session_joined', ({ sessionId: id }) => {
   document.getElementById('loginScreen').classList.add('hidden');
 });
 
+// ── Estado de telefones ──
+let phones = [];                  // lista de { id, name, status, contactCount }
+let phoneContacts = {};           // phoneId → contacts[]
+let phoneStatuses = {};           // phoneId → { status, message }
+let selectedPhoneId = null;       // telefone selecionado para ver contatos
+let currentQrPhoneId = null;      // telefone cujo QR está sendo exibido
+
+// ── Estado geral ──
 let contacts = [];
 let importedContacts = [];
 let sheetHeaders = [];
@@ -99,27 +108,48 @@ let sendMode = 'text';
 let selectedDelay = 3000;
 let uploadedFile = null;
 let isSending = false;
-let waStatus = 'disconnected';
 let importFilename = null;
 
-socket.on('status', ({ status, message }) => {
-  waStatus = status;
-  updateStatusUI(status, message);
-  if (status === 'ready' || status === 'connecting') {
-    document.getElementById('qrModal').classList.remove('show');
-  }
-  if (status === 'error') {
-    document.getElementById('qrLoading').classList.remove('show');
-    document.getElementById('qrImage').style.display = 'none';
-    document.getElementById('qrInstructions').style.display = 'none';
-    document.getElementById('qrSteps').style.display = 'none';
-    setText(document.getElementById('qrErrorMsg'), message || 'Falha na conexão.');
-    document.getElementById('qrError').classList.add('show');
-    document.getElementById('qrModal').classList.add('show');
+// ── Eventos socket de telefones ──
+
+socket.on('phones_list', ({ phones: p }) => {
+  phones = p;
+  renderPhonesList();
+  updatePhoneSourceSelect();
+  updatePhoneSelectorSend();
+  updateHeaderSummary();
+  updateSendBtn();
+});
+
+socket.on('phone_status', ({ phoneId, status, message }) => {
+  phoneStatuses[phoneId] = { status, message };
+  const phone = phones.find(ph => ph.id === phoneId);
+  if (phone) phone.status = status;
+  renderPhonesList();
+  updatePhoneSourceSelect();
+  updatePhoneSelectorSend();
+  updateHeaderSummary();
+  updateSendBtn();
+
+  if (currentQrPhoneId === phoneId) {
+    if (status === 'ready' || status === 'connecting') {
+      closeQrModal();
+    }
+    if (status === 'error') {
+      document.getElementById('qrLoading').classList.remove('show');
+      document.getElementById('qrImage').style.display = 'none';
+      document.getElementById('qrInstructions').style.display = 'none';
+      document.getElementById('qrSteps').style.display = 'none';
+      setText(document.getElementById('qrErrorMsg'), message || 'Falha na conexão.');
+      document.getElementById('qrError').classList.add('show');
+      document.getElementById('qrModal').classList.add('show');
+    }
   }
 });
 
-socket.on('qr', ({ qr }) => {
+socket.on('phone_qr', ({ phoneId, phoneName, qr }) => {
+  currentQrPhoneId = phoneId;
+  setText(document.getElementById('qrModalTitle'), `Conectar — ${phoneName}`);
   document.getElementById('qrLoading').classList.remove('show');
   document.getElementById('qrError').classList.remove('show');
   document.getElementById('qrImage').src = qr;
@@ -129,13 +159,19 @@ socket.on('qr', ({ qr }) => {
   document.getElementById('qrModal').classList.add('show');
 });
 
-socket.on('contacts', ({ contacts: c }) => {
-  contacts = c;
-  for (const id of selectedIds) {
-    if (!contacts.find(x => x.id === id)) selectedIds.delete(id);
+socket.on('phone_contacts', ({ phoneId, contacts: c }) => {
+  phoneContacts[phoneId] = c;
+  const phone = phones.find(ph => ph.id === phoneId);
+  if (phone) phone.contactCount = c.length;
+  if (phoneId === selectedPhoneId) {
+    contacts = c;
+    for (const id of selectedIds) {
+      if (!contacts.find(x => x.id === id) && !importedContacts.find(x => x.id === id)) selectedIds.delete(id);
+    }
+    renderList();
+    updateSendBtn();
   }
-  renderList();
-  updateSendBtn();
+  renderPhonesList();
 });
 
 socket.on('send_start', ({ total }) => {
@@ -223,9 +259,10 @@ socket.on('update_status', ({ status, version, progress }) => {
   }
 });
 
+// ── Atualização de software ──
+
 async function installUpdate() {
   if (!pendingUpdateInfo) return;
-
   if (isElectron && window.electronAPI.downloadUpdate) {
     const btn = document.getElementById('updateBtn');
     btn.disabled = true;
@@ -233,17 +270,13 @@ async function installUpdate() {
     await window.electronAPI.downloadUpdate(pendingUpdateInfo);
     return;
   }
-
   if (!confirm('O aplicativo será fechado para instalar a atualização e reabrirá automaticamente.\n\nDeseja continuar?')) return;
-
   const btn = document.getElementById('updateBtn');
   const text = document.getElementById('updateText');
   btn.disabled = true;
   setText(btn, 'Instalando...');
   setText(text, 'Instalando atualização — o app reabrirá em instantes...');
-  try {
-    await fetch('/api/update/install', { method: 'POST' });
-  } catch { }
+  try { await fetch('/api/update/install', { method: 'POST' }); } catch {}
 }
 
 async function checkForUpdates() {
@@ -293,11 +326,188 @@ async function checkForUpdates() {
   }
 }
 
-function api(path, opts) {
-  return fetch(`/api/${sessionId}${path}`, opts);
+// ── Auth token ──
+let _authToken = null;
+
+if (isElectron && window.electronAPI.getAuthToken) {
+  window.electronAPI.getAuthToken().then(t => { _authToken = t; });
 }
 
-function closeQrModal() { document.getElementById('qrModal').classList.remove('show'); }
+function api(path, opts = {}) {
+  const headers = Object.assign({}, opts.headers);
+  if (_authToken) headers['x-auth-token'] = _authToken;
+  return fetch(`/api/${sessionId}${path}`, Object.assign({}, opts, { headers }));
+}
+
+// ── Resumo do header ──
+function updateHeaderSummary() {
+  const ready = phones.filter(p => p.status === 'ready').length;
+  const total = phones.length;
+  const el = document.getElementById('phonesSummaryText');
+  if (total === 0) {
+    setText(el, 'Nenhum telefone');
+  } else {
+    setText(el, `${ready}/${total} conectado${ready !== 1 ? 's' : ''}`);
+  }
+}
+
+// ── Modal de telefones ──
+function openPhonesModal() {
+  renderPhonesList();
+  document.getElementById('phonesModal').classList.add('show');
+  document.getElementById('phoneNameInput').focus();
+}
+
+function closePhonesModal() {
+  document.getElementById('phonesModal').classList.remove('show');
+}
+
+const STATUS_LABEL = {
+  ready: 'Pronto',
+  connecting: 'Conectando...',
+  qr: 'Aguardando QR...',
+  disconnected: 'Desconectado',
+  error: 'Erro',
+};
+
+function renderPhonesList() {
+  const list = document.getElementById('phonesListEl');
+  const count = document.getElementById('phonesModalCount');
+  if (!list) return;
+
+  setText(count, `${phones.length} / 10`);
+
+  const btnAdd = document.getElementById('btnAddPhone');
+  const limitNote = document.getElementById('phonesLimitNote');
+  if (phones.length >= 10) {
+    btnAdd.disabled = true;
+    limitNote.style.display = '';
+  } else {
+    btnAdd.disabled = false;
+    limitNote.style.display = 'none';
+  }
+
+  if (phones.length === 0) {
+    list.innerHTML = '<div class="phones-empty">Nenhum telefone cadastrado.<br>Adicione um abaixo.</div>';
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  for (const phone of phones) {
+    const statusInfo = phoneStatuses[phone.id] || {};
+    const statusLabel = statusInfo.message || STATUS_LABEL[phone.status] || phone.status;
+    const isReady = phone.status === 'ready';
+    const isConnecting = phone.status === 'connecting' || phone.status === 'qr';
+
+    const row = document.createElement('div');
+    row.className = 'phone-row';
+
+    const dot = document.createElement('div');
+    dot.className = 'dot ' + phone.status;
+
+    const info = document.createElement('div');
+    info.className = 'phone-row-info';
+
+    const name = document.createElement('div');
+    name.className = 'phone-row-name';
+    name.textContent = phone.name;
+
+    const status = document.createElement('div');
+    status.className = 'phone-row-status';
+    status.textContent = isReady && phone.contactCount > 0
+      ? `${statusLabel} · ${phone.contactCount} conversas`
+      : statusLabel;
+
+    info.appendChild(name);
+    info.appendChild(status);
+
+    const actions = document.createElement('div');
+    actions.className = 'phone-row-actions';
+
+    const connectBtn = document.createElement('button');
+    connectBtn.className = 'btn-phone-connect' + (isReady ? ' disconnect' : '');
+    connectBtn.disabled = isConnecting;
+    if (isReady) {
+      connectBtn.textContent = 'Desconectar';
+      connectBtn.onclick = () => doDisconnectPhone(phone.id);
+    } else {
+      connectBtn.textContent = isConnecting ? 'Aguardando...' : 'Conectar';
+      connectBtn.onclick = () => doConnectPhone(phone.id);
+    }
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'btn-phone-remove';
+    removeBtn.textContent = '×';
+    removeBtn.title = 'Remover telefone';
+    removeBtn.onclick = () => doRemovePhone(phone.id, phone.name);
+
+    actions.appendChild(connectBtn);
+    actions.appendChild(removeBtn);
+
+    row.appendChild(dot);
+    row.appendChild(info);
+    row.appendChild(actions);
+    frag.appendChild(row);
+  }
+
+  list.innerHTML = '';
+  list.appendChild(frag);
+}
+
+async function doAddPhone() {
+  const input = document.getElementById('phoneNameInput');
+  const name = input.value.trim();
+  if (!name) { input.focus(); return; }
+  if (phones.length >= 10) return;
+
+  const res = await api('/phones', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  const data = await res.json();
+  if (!data.ok) { alert(data.error || 'Erro ao adicionar telefone'); return; }
+  input.value = '';
+  input.focus();
+}
+
+async function doConnectPhone(phoneId) {
+  const phone = phones.find(p => p.id === phoneId);
+  const phoneName = phone ? phone.name : 'WhatsApp';
+
+  // Mostra QR loading enquanto aguarda
+  currentQrPhoneId = phoneId;
+  setText(document.getElementById('qrModalTitle'), `Conectar — ${phoneName}`);
+  showQrLoading('Abrindo navegador, aguarde...');
+
+  await api(`/phones/${phoneId}/connect`, { method: 'POST' });
+}
+
+async function doDisconnectPhone(phoneId) {
+  await api(`/phones/${phoneId}/disconnect`, { method: 'POST' });
+}
+
+async function doRemovePhone(phoneId, name) {
+  if (!confirm(`Remover "${name}"? A sessão do WhatsApp será encerrada.`)) return;
+  await api(`/phones/${phoneId}`, { method: 'DELETE' });
+  if (selectedPhoneId === phoneId) {
+    selectedPhoneId = null;
+    contacts = [];
+    renderList();
+  }
+  delete phoneContacts[phoneId];
+  delete phoneStatuses[phoneId];
+}
+
+function retryCurrentPhone() {
+  if (currentQrPhoneId) doConnectPhone(currentQrPhoneId);
+}
+
+// ── QR Modal ──
+function closeQrModal() {
+  document.getElementById('qrModal').classList.remove('show');
+  currentQrPhoneId = null;
+}
 
 function showQrLoading(msg) {
   setText(document.getElementById('qrLoadingMsg'), msg || 'Abrindo navegador, aguarde...');
@@ -310,38 +520,78 @@ function showQrLoading(msg) {
   document.getElementById('qrModal').classList.add('show');
 }
 
-function updateStatusUI(status, message) {
-  const dot = document.getElementById('statusDot');
-  const txt = document.getElementById('statusText');
-  const btn = document.getElementById('connectBtn');
-  dot.className = 'dot ' + status;
-  setText(txt, message || status);
-  if (status === 'ready') {
-    setText(btn, 'Desconectar'); btn.className = 'btn-connect disconnect'; btn.disabled = false;
-  } else if (status === 'connecting') {
-    setText(btn, 'Conectando...'); btn.className = 'btn-connect'; btn.disabled = true;
-  } else if (status === 'qr') {
-    setText(btn, 'Novo QR'); btn.className = 'btn-connect'; btn.disabled = false;
+// ── Seletor de contatos (painel esquerdo) ──
+function updatePhoneSourceSelect() {
+  const bar = document.getElementById('phoneSourceBar');
+  const sel = document.getElementById('phoneSourceSelect');
+  const readyPhones = phones.filter(p => p.status === 'ready');
+
+  if (readyPhones.length === 0) {
+    bar.style.display = 'none';
+    if (selectedPhoneId) {
+      selectedPhoneId = null;
+      contacts = [];
+      renderList();
+    }
+    return;
+  }
+
+  bar.style.display = '';
+  const prev = sel.value;
+  sel.innerHTML = readyPhones.map(p =>
+    `<option value="${esc(p.id)}">${esc(p.name)} (${p.contactCount || 0})</option>`
+  ).join('');
+
+  // Manter seleção anterior se ainda disponível
+  if (prev && readyPhones.find(p => p.id === prev)) {
+    sel.value = prev;
   } else {
-    setText(btn, 'Conectar'); btn.className = 'btn-connect'; btn.disabled = false;
+    sel.value = readyPhones[0].id;
+    onPhoneSourceChange();
   }
 }
 
-async function toggleConnect() {
-  if (!sessionId) return;
-  if (waStatus === 'ready') {
-    await api('/disconnect', { method: 'POST' });
-  } else if (waStatus !== 'connecting') {
-    showQrLoading(waStatus === 'qr' ? 'Gerando novo QR code...' : 'Abrindo navegador, aguarde...');
-    await api('/connect', { method: 'POST' });
-  }
+function onPhoneSourceChange() {
+  const sel = document.getElementById('phoneSourceSelect');
+  selectedPhoneId = sel.value || null;
+  contacts = selectedPhoneId ? (phoneContacts[selectedPhoneId] || []) : [];
+  renderList();
+  updateSendBtn();
 }
 
+// ── Seletor de telefone para envio ──
+function updatePhoneSelectorSend() {
+  const sel = document.getElementById('phoneSelectorSend');
+  const readyPhones = phones.filter(p => p.status === 'ready');
+  const prev = sel.value;
+
+  sel.innerHTML = '<option value="">— Selecione um telefone —</option>' +
+    readyPhones.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+
+  if (prev && readyPhones.find(p => p.id === prev)) {
+    sel.value = prev;
+  } else if (readyPhones.length === 1) {
+    sel.value = readyPhones[0].id;
+  }
+  updateSendBtn();
+}
+
+function onSendPhoneChange() {
+  updateSendBtn();
+  updateSummary();
+}
+
+function getSelectedSendPhoneId() {
+  return document.getElementById('phoneSelectorSend')?.value || null;
+}
+
+// ── Recarregar contatos ──
 async function reloadContacts() {
-  if (waStatus !== 'ready') return;
-  await api('/reload-contacts', { method: 'POST' });
+  if (!selectedPhoneId) return;
+  await api(`/phones/${selectedPhoneId}/reload-contacts`, { method: 'POST' });
 }
 
+// ── Filtros e lista de contatos ──
 function setFilter(f, btn) {
   currentFilter = f;
   document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
@@ -352,12 +602,17 @@ function setFilter(f, btn) {
 function renderList() {
   const q = document.getElementById('searchInput').value.toLowerCase().trim();
   const list = document.getElementById('contactsList');
-  if (!contacts.length) {
-    const icon = waStatus === 'ready' ? '📭' : '📱';
-    const msg = waStatus === 'ready' ? 'Nenhum contato carregado' : 'Conecte seu WhatsApp<br>para ver seus contatos';
+
+  if (!contacts.length && !importedContacts.length) {
+    const hasReady = phones.some(p => p.status === 'ready');
+    const icon = hasReady ? '📭' : '📱';
+    const msg = hasReady
+      ? 'Nenhum contato carregado'
+      : 'Adicione e conecte um telefone<br>para ver seus contatos';
     setHTML(list, `<div class="empty-state"><div class="icon">${icon}</div><p>${msg}</p></div>`);
     return;
   }
+
   const allContacts = [...importedContacts, ...contacts];
   const filtered = allContacts.filter(c => {
     if (currentFilter === 'people' && c.isGroup) return false;
@@ -365,6 +620,7 @@ function renderList() {
     if (q && !c.name.toLowerCase().includes(q)) return false;
     return true;
   });
+
   setText(document.getElementById('listCount'), `${filtered.length} itens`);
   if (!filtered.length) {
     setHTML(list, `<div class="empty-state"><div class="icon">🔍</div><p>Nenhum resultado para "<em>${esc(q)}</em>"</p></div>`);
@@ -462,10 +718,27 @@ document.querySelectorAll('.delay-opt').forEach(btn => {
   });
 });
 
+let _draftTimer = null;
+function saveDraft() {
+  clearTimeout(_draftTimer);
+  _draftTimer = setTimeout(() => {
+    localStorage.setItem('draft_message', document.getElementById('msgText').value);
+  }, 500);
+}
+
 document.getElementById('msgText').addEventListener('input', function () {
   setText(document.getElementById('charCount'), this.value.length + ' caracteres');
   updateSendBtn();
+  saveDraft();
 });
+
+(function restoreDraft() {
+  const draft = localStorage.getItem('draft_message');
+  if (draft) {
+    document.getElementById('msgText').value = draft;
+    setText(document.getElementById('charCount'), draft.length + ' caracteres');
+  }
+})();
 
 const fileInput = document.getElementById('fileInput');
 const fileZone = document.getElementById('fileZone');
@@ -518,19 +791,27 @@ function switchTab(tab, btn) {
 }
 
 function updateSummary() {
+  const sendPhoneId = getSelectedSendPhoneId();
+  const phone = phones.find(p => p.id === sendPhoneId);
   setText(document.getElementById('sumContacts'), selectedIds.size);
   setText(document.getElementById('sumMsg'), sendMode === 'file' ? '(sem texto)' : (document.getElementById('msgText').value.trim() || '—'));
   setText(document.getElementById('sumFile'), uploadedFile ? uploadedFile.original : '—');
+  setText(document.getElementById('sumPhone'), phone ? phone.name : '—');
 }
 
 function updateSendBtn() {
   const hasText = document.getElementById('msgText').value.trim().length > 0;
   const hasContent = sendMode === 'text' ? hasText : sendMode === 'file' ? !!uploadedFile : hasText && !!uploadedFile;
-  document.getElementById('sendBtn').disabled = !(selectedIds.size > 0 && hasContent && waStatus === 'ready') || isSending;
+  const sendPhoneId = getSelectedSendPhoneId();
+  const phoneReady = !!(sendPhoneId && phones.find(p => p.id === sendPhoneId && p.status === 'ready'));
+  document.getElementById('sendBtn').disabled = !(selectedIds.size > 0 && hasContent && phoneReady) || isSending;
 }
 
 async function startSend() {
   if (isSending) return;
+  const sendPhoneId = getSelectedSendPhoneId();
+  if (!sendPhoneId) { alert('Selecione um telefone para enviar.'); return; }
+
   updateSummary();
   switchTab('send', document.querySelector('.tab[data-tab="send"]'));
 
@@ -546,8 +827,9 @@ async function startSend() {
         message: sendMode === 'file' ? '' : document.getElementById('msgText').value,
         filename: uploadedFile?.filename || null,
         delayMs: selectedDelay,
-        contactsData: Object.keys(contactsData).length ? contactsData : undefined
-      })
+        phoneId: sendPhoneId,
+        contactsData: Object.keys(contactsData).length ? contactsData : undefined,
+      }),
     });
     const data = await res.json();
     if (!data.ok) {
@@ -590,6 +872,16 @@ function updateVarsBar() {
     btn.setAttribute('onclick', `insertVar('${esc(h)}')`);
     bar.appendChild(btn);
   });
+
+  const sel = document.getElementById('previewContactSelect');
+  sel.innerHTML = '';
+  importedContacts.forEach((c, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = (c.name || c.id.replace('@c.us', '')) + ` (#${i + 1})`;
+    sel.appendChild(opt);
+  });
+
   updateMsgPreview();
 }
 
@@ -607,15 +899,33 @@ function insertVar(colName) {
 function updateMsgPreview() {
   const previewEl = document.getElementById('msgPreview');
   if (!previewEl) return;
-  const firstImported = importedContacts[0];
-  if (!firstImported?.rowData) { setText(previewEl, '—'); return; }
+  const idx = parseInt(document.getElementById('previewContactSelect')?.value || '0', 10);
+  const contact = importedContacts[idx];
+  if (!contact?.rowData) { setText(previewEl, '—'); return; }
   const template = document.getElementById('msgText').value;
   if (!template.trim()) { setText(previewEl, '—'); return; }
-  const preview = template.replace(/\{\{([^}]+)\}\}/g, (_, key) => {
-    const val = firstImported.rowData[key.trim()];
-    return val !== undefined ? `[${val}]` : `{{${key.trim()}}}`;
+
+  previewEl.innerHTML = '';
+  const parts = template.split(/(\{\{[^}]+\}\})/g);
+  parts.forEach(part => {
+    const match = part.match(/^\{\{([^}]+)\}\}$/);
+    if (match) {
+      const key = match[1].trim();
+      const val = contact.rowData[key];
+      const span = document.createElement('span');
+      if (val !== undefined && val !== '') {
+        span.textContent = `[${val}]`;
+        span.style.color = 'var(--accent)';
+      } else {
+        span.textContent = `{{${key}}}`;
+        span.className = 'var-missing';
+        span.title = 'Variável sem valor neste contato';
+      }
+      previewEl.appendChild(span);
+    } else {
+      previewEl.appendChild(document.createTextNode(part));
+    }
   });
-  setText(previewEl, preview);
 }
 
 function openImportModal() {
@@ -702,14 +1012,17 @@ function buildImportStep2(headers, preview) {
   if (guessName >= 0) nameEl.value = guessName;
 
   const table = document.createElement('table');
-  const thead = document.createElement('tr');
+  const thead = document.createElement('thead');
+  const theadRow = document.createElement('tr');
   headers.forEach(h => {
     const th = document.createElement('th');
     th.textContent = h || '—';
-    thead.appendChild(th);
+    theadRow.appendChild(th);
   });
+  thead.appendChild(theadRow);
   table.appendChild(thead);
 
+  const tbody = document.createElement('tbody');
   preview.forEach(row => {
     const tr = document.createElement('tr');
     row.forEach(v => {
@@ -717,8 +1030,9 @@ function buildImportStep2(headers, preview) {
       td.textContent = v;
       tr.appendChild(td);
     });
-    table.appendChild(tr);
+    tbody.appendChild(tr);
   });
+  table.appendChild(tbody);
 
   const previewEl = document.getElementById('importPreview');
   previewEl.innerHTML = '';
@@ -736,7 +1050,7 @@ async function confirmImport() {
   const r = await api('/extract-phones', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filename: importFilename, column: phoneCol, nameColumn: nameCol || '' })
+    body: JSON.stringify({ filename: importFilename, column: phoneCol, nameColumn: nameCol || '' }),
   });
   const data = await r.json();
   btn.disabled = false;
@@ -752,3 +1066,23 @@ async function confirmImport() {
   updateVarsBar();
   closeImportModal();
 }
+
+// ── Atalhos de teclado ──
+document.addEventListener('keydown', (e) => {
+  const tag = document.activeElement?.tagName;
+  const inInput = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
+
+  if (e.key === 'Escape') {
+    if (document.getElementById('importModal').classList.contains('show')) closeImportModal();
+    else if (document.getElementById('qrModal').classList.contains('show')) closeQrModal();
+    else if (document.getElementById('phonesModal').classList.contains('show')) closePhonesModal();
+    return;
+  }
+
+  if (inInput) return;
+
+  if (e.ctrlKey && e.key === 'Enter') {
+    const btn = document.getElementById('sendBtn');
+    if (!btn.disabled) startSend();
+  }
+});

@@ -1,10 +1,10 @@
 const path = require('path');
 const fs = require('fs');
 const config = require('../app/config');
-const { upload } = require('../services/mediaService');
+const { upload, validateWaLimits } = require('../services/mediaService');
 
 function registerUploadRoutes(app) {
-  app.post('/api/:sessionId/upload', upload.single('file'), (req, res) => {
+  app.post('/api/:sessionId/upload', upload.single('file'), validateWaLimits, (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
     res.json({
       ok: true,

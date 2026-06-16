@@ -207,6 +207,12 @@ textarea::placeholder{color:var(--muted)}
 .var-btn{background:rgba(99,179,237,.1);border:1px solid rgba(99,179,237,.3);color:#63b3ed;border-radius:5px;padding:3px 9px;font-size:11px;font-family:'Syne',sans-serif;font-weight:600;cursor:pointer;transition:all .15s}
 .var-btn:hover{background:rgba(99,179,237,.2)}
 .msg-preview{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--muted);line-height:1.6;margin-top:6px;white-space:pre-wrap;max-height:80px;overflow-y:auto}
+.preview-header{display:flex;align-items:center;justify-content:space-between;margin-top:10px}
+.preview-header .field-label{margin:0}
+.preview-select{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:3px 8px;color:var(--text);font-size:11px;font-family:'DM Sans',sans-serif;outline:none;max-width:160px}
+.preview-select:focus{border-color:var(--accent)}
+.var-missing{color:var(--red)}
+.conn-timer{font-size:10px;color:var(--muted);opacity:.7}
 .msg-preview strong{color:var(--accent);font-weight:600}
 .btn-primary{flex:1;padding:13px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 4px 20px rgba(37,211,102,.2)}
 .btn-primary:hover{background:#1fc25c;transform:translateY(-1px);box-shadow:0 6px 24px rgba(37,211,102,.3)}
@@ -231,10 +237,10 @@ textarea::placeholder{color:var(--muted)}
 .import-col-row>div{flex:1}
 .import-select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none}
 .import-select:focus{border-color:var(--accent)}
-.import-preview{background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:16px}
-.import-preview table{width:100%;border-collapse:collapse;font-size:11px}
-.import-preview th{background:var(--border);color:var(--muted);font-weight:600;padding:6px 10px;text-align:left;font-family:'Syne',sans-serif;font-size:10px;letter-spacing:.5px}
-.import-preview td{padding:5px 10px;border-top:1px solid var(--border);color:var(--text)}
+.import-preview{background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:auto;max-height:200px;margin-bottom:16px}
+.import-preview table{width:100%;border-collapse:collapse;font-size:11px;min-width:400px}
+.import-preview thead th{position:sticky;top:0;background:var(--border);color:var(--muted);font-weight:600;padding:6px 10px;text-align:left;font-family:'Syne',sans-serif;font-size:10px;letter-spacing:.5px;z-index:1}
+.import-preview td{padding:5px 10px;border-top:1px solid var(--border);color:var(--text);white-space:nowrap}
 .import-result{background:rgba(37,211,102,.08);border:1px solid rgba(37,211,102,.2);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--accent);margin-bottom:16px;text-align:center;font-family:'Syne',sans-serif;font-weight:700}
 .import-actions{display:flex;gap:8px}
 .btn-import-back{flex:1;padding:11px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .15s}
@@ -262,3 +268,98 @@ textarea::placeholder{color:var(--muted)}
 #qrErrorMsg{font-size:13px;color:var(--red);text-align:center}
 .qr-close{position:absolute;top:12px;right:16px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1;padding:4px}
 .qr-close:hover{color:var(--text)}
+
+/* ── PHONES SUMMARY (header) ── */
+.phones-summary{
+  display:flex;align-items:center;gap:7px;
+  background:var(--surface2);border:1px solid var(--border);
+  border-radius:20px;padding:6px 14px;font-size:12px;color:var(--muted);
+}
+
+/* ── PHONES MODAL ── */
+#phonesModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center}
+#phonesModal.show{display:flex}
+.phones-card{
+  position:relative;background:var(--surface);border:1px solid var(--border);
+  border-radius:20px;padding:0;width:90%;max-width:480px;
+  display:flex;flex-direction:column;max-height:80vh;overflow:hidden;
+}
+.phones-card-header{
+  display:flex;align-items:center;gap:10px;
+  padding:20px 24px 16px;border-bottom:1px solid var(--border);flex-shrink:0;
+}
+.phones-card-header h2{font-family:'Syne',sans-serif;font-size:17px;font-weight:800;flex:1}
+.phones-modal-count{font-size:11px;color:var(--muted);font-family:'Syne',sans-serif;font-weight:600;margin-right:28px}
+.phones-list-el{flex:1;overflow-y:auto;min-height:80px}
+.phones-list-el::-webkit-scrollbar{width:4px}
+.phones-list-el::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.phone-row{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 20px;border-bottom:1px solid rgba(42,49,64,.5);
+  transition:background .12s;
+}
+.phone-row:hover{background:var(--surface2)}
+.phone-row-left{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+.phone-row-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.phone-row-status{font-size:11px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.phone-row-info{flex:1;min-width:0}
+.phone-row-actions{display:flex;gap:6px;flex-shrink:0}
+.btn-phone-connect{
+  padding:5px 12px;border-radius:6px;font-size:11px;font-family:'Syne',sans-serif;
+  font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;border:none;
+  background:var(--accent);color:#fff;
+}
+.btn-phone-connect:hover{background:#1fc25c}
+.btn-phone-connect.disconnect{background:rgba(240,71,71,.12);border:1px solid rgba(240,71,71,.3);color:var(--red)}
+.btn-phone-connect.disconnect:hover{background:rgba(240,71,71,.22)}
+.btn-phone-connect:disabled{background:var(--surface2);color:var(--muted);cursor:default}
+.btn-phone-remove{
+  padding:5px 10px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;
+  transition:all .15s;border:1px solid var(--border);background:none;color:var(--muted);
+}
+.btn-phone-remove:hover{border-color:var(--red);color:var(--red);background:rgba(240,71,71,.08)}
+.phones-add-area{
+  display:flex;gap:8px;padding:14px 20px;border-top:1px solid var(--border);flex-shrink:0;
+}
+.phones-add-area input{
+  flex:1;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;
+  padding:9px 12px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none;
+  transition:border-color .2s;
+}
+.phones-add-area input:focus{border-color:var(--accent)}
+.phones-add-area input::placeholder{color:var(--muted)}
+.btn-add-phone{
+  padding:9px 16px;background:var(--accent);color:#fff;border:none;border-radius:8px;
+  font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;
+  transition:all .15s;
+}
+.btn-add-phone:hover{background:#1fc25c}
+.btn-add-phone:disabled{background:var(--surface2);color:var(--muted);cursor:not-allowed}
+.phones-limit-note{
+  padding:10px 20px;font-size:11px;color:var(--yellow);text-align:center;
+  background:rgba(250,166,26,.05);border-top:1px solid rgba(250,166,26,.15);flex-shrink:0;
+}
+.phones-empty{padding:28px;text-align:center;font-size:13px;color:var(--muted)}
+
+/* ── PHONE SOURCE BAR (left panel) ── */
+.phone-source-bar{
+  display:flex;align-items:center;gap:8px;
+  padding:8px 14px;background:var(--surface2);border-bottom:1px solid var(--border);
+  font-size:11px;
+}
+.phone-source-label{color:var(--muted);white-space:nowrap;font-family:'Syne',sans-serif;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase}
+.phone-source-bar select{
+  flex:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;
+  padding:4px 8px;color:var(--text);font-size:11px;font-family:'DM Sans',sans-serif;outline:none;
+}
+.phone-source-bar select:focus{border-color:var(--accent)}
+
+/* ── SEND PHONE SELECTOR ── */
+.send-phone-row{display:flex;flex-direction:column;gap:6px}
+#phoneSelectorSend{
+  width:100%;background:var(--surface);border:1.5px solid var(--border);border-radius:8px;
+  padding:10px 12px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none;
+  transition:border-color .2s;
+}
+#phoneSelectorSend:focus{border-color:var(--accent)}
+#phoneSelectorSend option{background:var(--surface2)}

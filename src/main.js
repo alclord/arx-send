@@ -28,6 +28,7 @@ if (!gotLock) {
   const { createApp, startApp, stopCleanupIntervals } = require('./app');
   const { createHTTPServer } = require('./app/http');
   const config = require('./app/config');
+  const { AUTH_TOKEN } = require('./app/security');
   const { destroyAllSessions } = require('./services/sessionService');
 
   const appExpress = createApp();
@@ -162,6 +163,7 @@ if (!gotLock) {
   }
 
   ipcMain.handle('get-app-version', () => config.CURRENT_VERSION);
+  ipcMain.handle('get-auth-token', () => AUTH_TOKEN);
   ipcMain.handle('show-notification', (event, { title, body }) => {
     if (Notification.isSupported()) {
       new Notification({ title, body }).show();
