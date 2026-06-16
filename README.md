@@ -5,23 +5,26 @@ Conecta pelo QR code (igual ao WhatsApp Web) e permite enviar mensagens e arquiv
 
 ## Funcionalidades
 
-- **Multi-sessão** — várias pessoas usam ao mesmo tempo, cada uma com seu próprio WhatsApp
+- **Múltiplos telefones por sessão** — conecte até 10 chips diferentes em uma mesma sessão e escolha qual deles faz o envio
+- **Multi-sessão** — várias pessoas usam ao mesmo tempo, cada uma com seu próprio conjunto de telefones
 - **QR code** para autenticação, igual ao WhatsApp Web; sessão salva em disco (não precisa escanear toda vez)
 - **Importação de planilha** — importe contatos de arquivos `.xlsx`, `.xls` ou `.csv`
-- **Mensagens personalizadas** — use variáveis `{{NomeColuna}}` que são substituídas pelos dados de cada linha da planilha
+- **Mensagens personalizadas** — use variáveis `{{NomeColuna}}` substituídas pelos dados de cada linha da planilha
 - **Envio de texto, arquivo ou texto + arquivo** (imagens, vídeos, PDFs, documentos, áudio — até 64 MB)
-- **Filtro e busca** de contatos e grupos
+- **Filtro e busca** de contatos e grupos por telefone selecionado
 - **Intervalo configurável** entre envios: 2s, 3s, 5s, 8s ou 15s
 - **Progresso em tempo real** via Socket.IO com log por contato
 - **Botão Parar** para interromper o disparo a qualquer momento
 - **Cache de contatos** — na reconexão a lista aparece instantaneamente
 - **Watchdog automático** — reconecta sozinho se o WhatsApp travar durante a inicialização
+- **Auto-atualização** — o app detecta e aplica novas versões automaticamente
 - Interface responsiva com tema escuro
 
 ## Limites
 
 | Item | Limite |
 |---|---|
+| Telefones por sessão | 10 |
 | Tamanho do arquivo anexo | 64 MB |
 | Linhas por planilha | 10.000 |
 | Contatos por disparo | 5.000 |
@@ -29,8 +32,8 @@ Conecta pelo QR code (igual ao WhatsApp Web) e permite enviar mensagens e arquiv
 
 ## Instalação — Windows (executável)
 
-Baixe o instalador `arx-send-setup.exe` na aba [Releases](../../releases) e execute.  
-O aplicativo abre automaticamente no navegador após a instalação. Não requer Node.js.
+Baixe o instalador `ARX-Send-Setup-x.x.x.exe` na aba [Releases](../../releases) e execute.  
+O aplicativo instala e abre automaticamente. Não requer Node.js nem Chrome instalados.
 
 ## Instalação — execução local (Node.js)
 
@@ -97,12 +100,19 @@ sudo iptables -I INPUT -p tcp --dport 22 -j ACCEPT
 
 ## Como usar
 
-1. Acesse a URL no navegador
-2. Digite o nome da sua sessão (ex: `yuri`, `suporte`, `vendas`)
-3. Clique em **Conectar** e escaneie o QR code com o WhatsApp
-4. Aguarde os contatos carregarem
-5. **(Opcional)** Clique em 📊 para importar contatos de uma planilha
-6. Selecione os destinatários, configure a mensagem e clique em **Iniciar Disparo**
+1. Abra o app e digite o nome da sua sessão (ex: `yuri`, `suporte`, `vendas`)
+2. Clique em **📱 Gerenciar** no header
+3. Adicione um telefone com um nome (ex: "Celular Yuri") e clique em **Conectar**
+4. Escaneie o QR code com o WhatsApp do celular
+5. Repita para adicionar mais chips se necessário (até 10 por sessão)
+6. Aguarde os contatos carregarem no painel esquerdo
+7. **(Opcional)** Clique em 📊 para importar contatos de uma planilha
+8. Selecione os destinatários, configure a mensagem, escolha o telefone em **Enviar de:** e clique em **🚀 Iniciar Disparo**
+
+### Múltiplos telefones
+
+Na aba **Disparar**, o seletor **Enviar de:** lista apenas os telefones já conectados.  
+O painel de contatos mostra automaticamente as conversas do telefone selecionado para visualização.
 
 ### Mensagens personalizadas com planilha
 
@@ -119,9 +129,24 @@ Olá, {{Nome}}! Sua fatura da {{Empresa}} vence em {{Vencimento}}.
 ```bash
 # Rodar testes de unidade (normalização de telefone, personalização de mensagem, etc.)
 npm test
+
+# Rodar em modo Electron (desenvolvimento)
+npm run electron
+
+# Gerar instalador Windows
+npm run build
 ```
 
-Os testes cobrem as funções críticas em `src/utils.js` usando o runner nativo do Node.js (`node:test`) — sem dependências extras.
+Os testes cobrem as funções críticas em `src/utils/helpers.js` usando o runner nativo do Node.js (`node:test`) — sem dependências extras.
+
+## Histórico de versões
+
+| Versão | Destaque |
+|---|---|
+| **2.0.0** | Múltiplos telefones por sessão (até 10), seletor de chip no disparo, fix do QR code |
+| 1.3.0 | Auto-updater customizado (asar-only) |
+| 1.2.2 | Testes do auto-updater |
+| 1.2.1 | Fix EADDRINUSE ao abrir segunda instância |
 
 ## Aviso
 
