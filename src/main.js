@@ -6,6 +6,10 @@ const { AutoUpdater } = require('./updater/autoUpdater');
 process.env.ELECTRON_IS_DEV = parseInt(process.env.ELECTRON_IS_DEV || '0', 10);
 const isDev = process.env.ELECTRON_IS_DEV === '1';
 
+if (process.platform === 'win32') {
+  app.setAppUserModelId('ARX Send');
+}
+
 const PORT = process.env.PORT || 3000;
 let mainWindow = null;
 let tray = null;

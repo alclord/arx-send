@@ -118,6 +118,8 @@ let sendMode = 'text';
 let selectedDelay = 3000;
 let uploadedFile = null;
 let isSending = false;
+let _sendDelayMs = 0;
+let _timerInterval = null;
 let importFilename = null;
 
 // ── Eventos socket de telefones ──
@@ -184,8 +186,32 @@ socket.on('phone_contacts', ({ phoneId, contacts: c }) => {
   renderPhonesList();
 });
 
+function _clearSendTimer() {
+  if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
+  const w = document.getElementById('progTimerWrap');
+  if (w) w.style.display = 'none';
+}
+
+function _startSendTimer(delayMs) {
+  _clearSendTimer();
+  if (delayMs <= 30000) return;
+  let remaining = Math.ceil(delayMs / 1000);
+  const timerEl = document.getElementById('progTimer');
+  const timerWrap = document.getElementById('progTimerWrap');
+  if (!timerEl || !timerWrap) return;
+  const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  timerWrap.style.display = '';
+  setText(timerEl, fmt(remaining));
+  _timerInterval = setInterval(() => {
+    remaining--;
+    if (remaining <= 0) { _clearSendTimer(); return; }
+    setText(timerEl, fmt(remaining));
+  }, 1000);
+}
+
 socket.on('send_start', ({ total }) => {
   isSending = true;
+  _clearSendTimer();
   const progressBox = document.getElementById('progressBox');
   progressBox.classList.add('show');
   progressBox.classList.remove('done');
@@ -205,6 +231,7 @@ socket.on('send_progress', ({ index, total, name, status, error }) => {
   setText(document.getElementById('progCounter'), `${index + 1} / ${total}`);
   const log = document.getElementById('progLog');
   if (status === 'sending') {
+    _clearSendTimer();
     setText(document.getElementById('progLabel'), `Enviando para ${name}...`);
     const el = document.createElement('div');
     el.className = 'log-sending'; el.textContent = `⏳ ${name}`; el.id = 'log_' + index;
@@ -212,15 +239,18 @@ socket.on('send_progress', ({ index, total, name, status, error }) => {
   } else if (status === 'done') {
     const el = document.getElementById('log_' + index) || log.lastChild;
     if (el) { el.className = 'log-done'; el.textContent = `✓ ${name}`; }
+    if (index + 1 < total) _startSendTimer(_sendDelayMs);
   } else if (status === 'error') {
     const el = document.getElementById('log_' + index) || log.lastChild;
     if (el) { el.className = 'log-error'; el.textContent = `✗ ${name}: ${error}`; }
+    if (index + 1 < total) _startSendTimer(_sendDelayMs);
   }
   log.scrollTop = log.scrollHeight;
 });
 
 socket.on('send_done', () => {
   isSending = false;
+  _clearSendTimer();
   const sendBtn = document.getElementById('sendBtn');
   sendBtn.classList.remove('loading');
   sendBtn.style.display = '';
@@ -238,6 +268,7 @@ socket.on('send_done', () => {
 
 socket.on('send_stopped', () => {
   isSending = false;
+  _clearSendTimer();
   const sendBtn = document.getElementById('sendBtn');
   sendBtn.classList.remove('loading');
   sendBtn.style.display = '';
@@ -887,6 +918,7 @@ async function startSend() {
   if (isSending) return;
   const sendPhoneId = getSelectedSendPhoneId();
   if (!sendPhoneId) { alert('Selecione um telefone para enviar.'); return; }
+  _sendDelayMs = getDelayMs();
 
   updateSummary();
   const sendBtn = document.getElementById('sendBtn');

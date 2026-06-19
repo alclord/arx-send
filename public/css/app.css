@@ -409,6 +409,12 @@ textarea::placeholder{color:var(--muted)}
   transform-origin:left;
   transition:width .4s ease-out;
 }
+.prog-timer-wrap{
+  display:flex;align-items:center;gap:6px;padding:6px 24px 2px;
+  font-size:11px;color:var(--muted);flex-shrink:0;
+}
+.prog-timer-label{font-family:'Geist',sans-serif}
+.prog-timer{font-family:'Geist Mono',monospace;color:var(--yellow);font-weight:600;font-size:13px;min-width:36px}
 .progress-log{
   flex:1;overflow-y:auto;padding:14px 24px;font-family:'Geist Mono',monospace;
   font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:3px;
