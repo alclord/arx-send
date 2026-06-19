@@ -5,115 +5,250 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>ARX Send</title>
   <link rel="stylesheet" href="/css/app.css"/>
-  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet"/>
   <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
 
+<!-- SVG sprite – aria-hidden, never rendered visually -->
+<svg aria-hidden="true" focusable="false" style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="icon-smartphone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="5" y="2" width="14" height="20" rx="2"/>
+    <line x1="12" y1="18" x2="12.01" y2="18"/>
+  </symbol>
+  <symbol id="icon-table" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2"/>
+    <path d="M3 9h18M3 15h18M9 3v18"/>
+  </symbol>
+  <symbol id="icon-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+    <path d="M21 3v5h-5"/>
+    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+    <path d="M8 16H3v5"/>
+  </symbol>
+  <symbol id="icon-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="11" cy="11" r="8"/>
+    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+  </symbol>
+  <symbol id="icon-message-square" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </symbol>
+  <symbol id="icon-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="22" y1="2" x2="11" y2="13"/>
+    <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+  </symbol>
+  <symbol id="icon-paperclip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+  </symbol>
+  <symbol id="icon-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+  </symbol>
+  <symbol id="icon-stop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="4" y="4" width="16" height="16" rx="2"/>
+  </symbol>
+  <symbol id="icon-triangle-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+    <line x1="12" y1="9" x2="12" y2="13"/>
+    <line x1="12" y1="17" x2="12.01" y2="17"/>
+  </symbol>
+  <symbol id="icon-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18"/>
+    <line x1="6" y1="6" x2="18" y2="18"/>
+  </symbol>
+  <symbol id="icon-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="20 6 9 17 4 12"/>
+  </symbol>
+</svg>
+
 <!-- LOGIN -->
-<div id="loginScreen">
+<div id="loginScreen" role="main">
   <div class="login-card">
     <div class="login-logo">
       <img src="/logo.png" alt="ARX Administradora"/>
     </div>
     <h1>ARX Send</h1>
-    <p>Digite o nome da sua sessão para entrar.<br>Cada pessoa usa uma sessão própria.</p>
+    <p>Sua sessão guarda contatos, telefones e mensagens.<br>Use um nome curto que identifique você.</p>
     <div class="login-input-wrap">
+      <label for="sessionInput" class="sr-only">Nome da sessão</label>
       <input type="text" id="sessionInput" placeholder="ex: yuri, equipe-vendas, suporte" maxlength="30"
+        autocomplete="username"
         oninput="clearLoginError()" onkeydown="if(event.key==='Enter') enterSession()"/>
     </div>
     <div class="login-hint">Letras, números, hífen e underline. Máx. 30 caracteres.</div>
-    <div class="login-error" id="loginError"></div>
+    <div class="login-error" id="loginError" role="alert" aria-live="assertive"></div>
     <button class="btn-login" onclick="enterSession()">Entrar na sessão →</button>
   </div>
 </div>
 
-<!-- HEADER -->
-<header>
-  <div class="logo">
-    <img src="/logo.png" alt="ARX Administradora"/>
+<!-- TITLEBAR -->
+<div class="titlebar">
+  <div class="titlebar-brand">
+    <img src="/logo.png" alt="ARX" class="titlebar-logo"/>
+    <span class="titlebar-name">ARX Send</span>
+    <span class="titlebar-version">v2.1.0</span>
   </div>
-  <div class="header-title">
-    <h1>ARX Send</h1>
-    <p>Disparo em massa via WhatsApp</p>
-  </div>
-  <button class="session-badge" id="sessionBadge" onclick="switchSession()" title="Trocar sessão"></button>
-  <div class="conn-area">
-    <div class="phones-summary" id="phonesSummary">
-      <span id="phonesSummaryText">Nenhum telefone</span>
-    </div>
-    <button class="btn-connect" onclick="openPhonesModal()">📱 Gerenciar</button>
-  </div>
-</header>
+  <div class="titlebar-drag"></div>
 
-<!-- UPDATE BANNER -->
-<div id="updateBanner">
-  <span>🔄</span>
-  <span class="update-text" id="updateText"></span>
-  <div class="update-prog-wrap" id="updateProgWrap" style="display:none">
-    <div class="update-prog-bar" id="updateProgBar"></div>
+  <!-- Update banner — inline for JS compat -->
+  <div id="updateBanner" role="status" aria-live="polite">
+    <span class="update-text" id="updateText"></span>
+    <div class="update-prog-wrap" id="updateProgWrap" style="display:none" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Progresso da atualização">
+      <div class="update-prog-bar" id="updateProgBar"></div>
+    </div>
+    <span id="updatePct"></span>
+    <button class="btn-update" id="updateBtn" onclick="installUpdate()" style="display:none">Reiniciar e instalar</button>
   </div>
-  <span id="updatePct"></span>
-  <button class="btn-update" id="checkUpdateBtn" onclick="checkForUpdates()">Verificar atualizações</button>
-  <button class="btn-update" id="updateBtn" onclick="installUpdate()" style="display:none">Reiniciar e instalar</button>
+
+  <!-- Hidden button kept for JS compat (checkForUpdates reads/writes it) -->
+  <button id="checkUpdateBtn" onclick="checkForUpdates()" style="display:none" aria-hidden="true" tabindex="-1">Verificar atualizações</button>
+
+  <!-- Visible update icon button -->
+  <div class="update-wrap" id="updateWrap">
+    <button class="update-btn" onclick="checkForUpdates()" aria-label="Verificar atualizações">
+      <svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+        <path d="M21 3v5h-5"/>
+        <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+        <path d="M8 16H3v5"/>
+      </svg>
+    </button>
+    <span class="update-dot" id="updateDot"></span>
+  </div>
+
+  <!-- Window controls (Electron) -->
+  <div class="win-controls">
+    <button class="win-btn" onclick="minimizeWindow()" aria-label="Minimizar">─</button>
+    <button class="win-btn" onclick="maximizeWindow()" aria-label="Maximizar">□</button>
+    <button class="win-btn close" onclick="closeWindow()" aria-label="Fechar">✕</button>
+  </div>
 </div>
 
-<!-- MAIN -->
-<div class="main">
-  <div class="left">
-    <div class="panel-header">
-      <span class="panel-title">Contatos</span>
-      <div class="sel-info">
-        <span class="sel-badge" id="selBadge">0</span>
-        <button class="icon-btn" onclick="openImportModal()" title="Importar planilha">📊</button>
-        <button class="icon-btn" onclick="reloadContacts()" title="Recarregar">↻</button>
+<!-- APP — 3-pane layout -->
+<div class="app">
+
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar">
+
+    <!-- Session -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-header">
+        <span class="sidebar-section-title">Sessão</span>
+      </div>
+      <div class="sidebar-session-row">
+        <button class="session-badge" id="sessionBadge" onclick="switchSession()" aria-label="Trocar sessão">—</button>
       </div>
     </div>
-    <!-- Seletor de telefone para visualizar contatos -->
+
+    <!-- Phones -->
+    <div class="sidebar-section sidebar-phones-section">
+      <div class="sidebar-section-header">
+        <span class="sidebar-section-title">Telefones</span>
+        <span class="phones-summary" id="phonesSummary">
+          <span id="phonesSummaryText">Nenhum</span>
+        </span>
+        <span id="phonesModalCount" class="phones-modal-count">0 / 10</span>
+      </div>
+      <div id="phonesListEl" class="phones-list-el" role="list" aria-label="Telefones cadastrados"></div>
+      <div class="phones-add-area">
+        <label for="phoneNameInput" class="sr-only">Nome do telefone</label>
+        <input type="text" id="phoneNameInput" placeholder="Novo telefone..." maxlength="50"
+          autocomplete="off"
+          onkeydown="if(event.key==='Enter') doAddPhone()"/>
+        <button class="btn-add-phone" id="btnAddPhone" onclick="doAddPhone()" aria-label="Adicionar telefone">＋</button>
+      </div>
+      <div class="phones-limit-note" id="phonesLimitNote" role="alert" style="display:none">
+        Limite de 10 telefones por sessão atingido.
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── CONTACTS PANE ── -->
+  <div class="contacts-pane">
+
+    <!-- Phone source bar -->
     <div class="phone-source-bar" id="phoneSourceBar" style="display:none">
-      <span class="phone-source-label">Ver contatos de:</span>
+      <label for="phoneSourceSelect" class="phone-source-label">Ver contatos de:</label>
       <select id="phoneSourceSelect" onchange="onPhoneSourceChange()"></select>
     </div>
-    <div class="search-bar">
-      <input type="text" id="searchInput" placeholder="🔍  Filtrar contatos e grupos..." oninput="renderList()"/>
-    </div>
-    <div class="filter-tabs">
-      <button class="filter-tab active" onclick="setFilter('all',this)">Todos</button>
-      <button class="filter-tab"        onclick="setFilter('people',this)">Contatos</button>
-      <button class="filter-tab"        onclick="setFilter('groups',this)">Grupos</button>
-    </div>
-    <div class="sel-toolbar">
-      <span id="listCount" style="color:var(--muted)">0 itens</span>
-      <div style="display:flex;gap:4px">
-        <button onclick="selectAll()">Todos</button>
-        <button class="danger" onclick="deselectAll()">Limpar</button>
+
+    <!-- Panel header -->
+    <div class="panel-header">
+      <div class="panel-header-left">
+        <span class="panel-title">Contatos</span>
+        <span id="listCount" class="panel-count">0 itens</span>
+      </div>
+      <div class="sel-info">
+        <span class="sel-badge" id="selBadge" aria-label="contatos selecionados">0</span>
+        <button class="icon-btn" onclick="selectAll()" aria-label="Selecionar todos os contatos">
+          <svg aria-hidden="true" focusable="false" width="14" height="14"><use href="#icon-check"/></svg>
+        </button>
+        <button class="icon-btn danger" onclick="deselectAll()" aria-label="Limpar seleção">
+          <svg aria-hidden="true" focusable="false" width="14" height="14"><use href="#icon-x"/></svg>
+        </button>
+        <button class="icon-btn" onclick="openImportModal()" aria-label="Importar planilha">
+          <svg aria-hidden="true" focusable="false" width="14" height="14"><use href="#icon-table"/></svg>
+        </button>
+        <button class="icon-btn" onclick="reloadContacts()" aria-label="Recarregar contatos">
+          <svg aria-hidden="true" focusable="false" width="14" height="14"><use href="#icon-refresh"/></svg>
+        </button>
       </div>
     </div>
-    <div class="contacts-list" id="contactsList">
+
+    <!-- Search -->
+    <div class="search-bar">
+      <label for="searchInput" class="sr-only">Filtrar contatos e grupos</label>
+      <div class="search-bar-inner">
+        <svg aria-hidden="true" focusable="false" class="search-icon" width="14" height="14"><use href="#icon-search"/></svg>
+        <input type="text" id="searchInput" placeholder="Filtrar contatos e grupos..." oninput="_vsLimit=200;renderList()"/>
+      </div>
+    </div>
+
+    <!-- Filter tabs -->
+    <div class="filter-tabs" role="tablist" aria-label="Filtrar contatos">
+      <button class="filter-tab active" role="tab" aria-selected="true"  aria-controls="contactsList" onclick="setFilter('all',this)">Todos</button>
+      <button class="filter-tab"        role="tab" aria-selected="false" aria-controls="contactsList" onclick="setFilter('people',this)">Contatos</button>
+      <button class="filter-tab"        role="tab" aria-selected="false" aria-controls="contactsList" onclick="setFilter('groups',this)">Grupos</button>
+    </div>
+
+    <!-- Contacts list -->
+    <div class="contacts-list" id="contactsList" role="list" aria-label="Lista de contatos">
       <div class="empty-state">
-        <div class="icon">📱</div>
+        <svg aria-hidden="true" focusable="false" width="36" height="36" class="empty-icon"><use href="#icon-smartphone"/></svg>
         <p>Adicione e conecte um telefone<br>para ver seus contatos</p>
       </div>
     </div>
+
   </div>
 
-  <div class="right">
-    <div class="tabs">
-      <button class="tab active" data-tab="message" onclick="switchTab('message',this)">💬 Mensagem</button>
-      <button class="tab"        data-tab="send"    onclick="switchTab('send',this)">🚀 Disparar</button>
-    </div>
+  <!-- ── COMPOSE PANE ── -->
+  <div class="compose-pane">
 
-    <div class="tab-content active" id="tab-message">
-      <div>
+    <!-- Scrollable compose content -->
+    <div class="compose-scroll">
+
+      <!-- Mode toggle -->
+      <div class="compose-section">
         <div class="field-label">O que enviar</div>
-        <div class="mode-toggle">
-          <button class="mode-btn active" data-mode="text" onclick="setMode('text',this)">💬 Só texto</button>
-          <button class="mode-btn"        data-mode="file" onclick="setMode('file',this)">📎 Só arquivo</button>
-          <button class="mode-btn"        data-mode="both" onclick="setMode('both',this)">💬+📎 Texto + arquivo</button>
+        <div class="mode-toggle" role="group" aria-label="Tipo de conteúdo">
+          <button class="mode-btn active" data-mode="text" onclick="setMode('text',this)">
+            <svg aria-hidden="true" focusable="false" width="13" height="13"><use href="#icon-message-square"/></svg>
+            Só texto
+          </button>
+          <button class="mode-btn" data-mode="file" onclick="setMode('file',this)">
+            <svg aria-hidden="true" focusable="false" width="13" height="13"><use href="#icon-paperclip"/></svg>
+            Só arquivo
+          </button>
+          <button class="mode-btn" data-mode="both" onclick="setMode('both',this)">
+            <svg aria-hidden="true" focusable="false" width="13" height="13"><use href="#icon-message-square"/></svg>
+            Texto + arquivo
+          </button>
         </div>
       </div>
-      <div id="textSection">
-        <div class="field-label">Texto da mensagem</div>
+
+      <!-- Text section -->
+      <div id="textSection" class="compose-section">
+        <label for="msgText" class="field-label">Texto da mensagem</label>
         <div class="msg-wrap">
           <textarea id="msgText" placeholder="Digite a mensagem..." oninput="updateSendBtn();updateMsgPreview()"></textarea>
           <div class="msg-footer-bar">
@@ -126,97 +261,143 @@
           <div class="vars-bar" id="varsBar"></div>
           <div class="preview-header">
             <div class="field-label">Preview</div>
+            <label for="previewContactSelect" class="sr-only">Selecionar contato para preview</label>
             <select class="preview-select" id="previewContactSelect" onchange="updateMsgPreview()">
               <option value="0">1º contato</option>
             </select>
           </div>
-          <div class="msg-preview" id="msgPreview">—</div>
+          <div class="msg-preview" id="msgPreview" aria-live="polite">—</div>
         </div>
       </div>
-      <div id="fileSection" style="display:none">
+
+      <!-- File section -->
+      <div id="fileSection" class="compose-section" style="display:none">
         <div class="field-label">Arquivo anexo</div>
         <div class="file-preview" id="filePreview">
-          <div class="file-thumb" id="fileThumb">📄</div>
+          <div class="file-thumb" id="fileThumb"></div>
           <div class="file-meta">
             <div class="fname" id="fileName">—</div>
             <div class="fsize" id="fileSize">—</div>
           </div>
-          <button class="file-remove" onclick="removeFile()">×</button>
+          <button class="file-remove" onclick="removeFile()" aria-label="Remover arquivo">
+            <svg aria-hidden="true" focusable="false" width="16" height="16"><use href="#icon-x"/></svg>
+          </button>
         </div>
         <div class="file-zone" id="fileZone">
+          <label for="fileInput" class="sr-only">Selecionar arquivo para envio</label>
           <input type="file" id="fileInput" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip"/>
-          <div class="file-zone-icon">📁</div>
+          <svg aria-hidden="true" focusable="false" class="file-zone-icon" width="28" height="28"><use href="#icon-folder"/></svg>
           <div class="file-zone-text"><strong>Clique para selecionar</strong> ou arraste aqui<br>Imagens, vídeos, PDF, documentos, áudio...</div>
         </div>
       </div>
-      <div>
-        <div class="field-label">Intervalo entre envios</div>
-        <div class="delay-opts" id="delayOpts">
-          <button class="delay-opt"        data-v="2000">2s</button>
-          <button class="delay-opt active" data-v="3000">3s</button>
-          <button class="delay-opt"        data-v="5000">5s</button>
-          <button class="delay-opt"        data-v="8000">8s</button>
-          <button class="delay-opt"        data-v="15000">15s</button>
-        </div>
-      </div>
-      <div class="warning-box">
-        ⚠️ <strong style="color:var(--yellow)">Atenção:</strong> Disparos em massa podem resultar em banimento pelo WhatsApp. Use intervalos maiores e listas menores.
-      </div>
-    </div>
 
-    <div class="tab-content" id="tab-send">
-      <!-- Seletor de telefone para envio -->
-      <div class="send-phone-row">
-        <div class="field-label">Enviar de</div>
+      <!-- Delay -->
+      <div class="compose-section">
+        <div class="field-label">Intervalo entre envios</div>
+        <div class="delay-row">
+          <input class="delay-input" type="number" id="delayVal" value="3" min="1" max="999" aria-label="Valor do intervalo"/>
+          <select class="delay-unit" id="delayUnit" aria-label="Unidade do intervalo">
+            <option value="s">segundos</option>
+            <option value="m">minutos</option>
+          </select>
+        </div>
+        <div class="delay-hint" id="delayHint">Envio a cada 3 segundos</div>
+      </div>
+
+      <!-- Phone selector -->
+      <div class="compose-section send-phone-row">
+        <label for="phoneSelectorSend" class="field-label">Enviar de</label>
         <select id="phoneSelectorSend" onchange="onSendPhoneChange()">
           <option value="">— Selecione um telefone conectado —</option>
         </select>
       </div>
-      <div class="send-sticky">
-        <button class="btn-primary" id="sendBtn" onclick="startSend()" disabled>🚀 Iniciar Disparo</button>
-        <button class="btn-stop"    id="stopBtn" onclick="stopSend()">⏹ Parar</button>
-      </div>
-      <div class="summary-box">
-        <div class="summary-row"><span>Destinatários</span><span class="accent" id="sumContacts">0</span></div>
-        <div class="summary-row"><span>Intervalo</span><span id="sumDelay">3s</span></div>
-        <div class="summary-row"><span>Mensagem</span><span id="sumMsg">—</span></div>
-        <div class="summary-row"><span>Arquivo</span><span id="sumFile">—</span></div>
-        <div class="summary-row"><span>Telefone</span><span id="sumPhone">—</span></div>
-      </div>
-      <div class="progress-box" id="progressBox">
-        <div class="progress-header">
-          <span id="progLabel">Enviando...</span>
-          <span id="progCounter" style="color:var(--accent);font-weight:700"></span>
+
+      <!-- Summary -->
+      <div class="compose-section">
+        <div class="summary-box" role="region" aria-label="Resumo do disparo">
+          <div class="summary-row"><span>Destinatários</span><span class="accent" id="sumContacts">0</span></div>
+          <div class="summary-row"><span>Intervalo</span><span id="sumDelay">3s</span></div>
+          <div class="summary-row"><span>Mensagem</span><span id="sumMsg">—</span></div>
+          <div class="summary-row"><span>Arquivo</span><span id="sumFile">—</span></div>
+          <div class="summary-row"><span>Telefone</span><span id="sumPhone">—</span></div>
         </div>
-        <div class="progress-bar-wrap"><div class="progress-bar" id="progBar"></div></div>
-        <div class="progress-log" id="progLog"></div>
+      </div>
+
+      <!-- Warning -->
+      <div class="compose-section">
+        <div class="warning-box" role="alert">
+          <svg aria-hidden="true" focusable="false" width="14" height="14" style="flex-shrink:0;color:var(--yellow);margin-top:1px"><use href="#icon-triangle-alert"/></svg>
+          <span><strong style="color:var(--yellow)">Atenção:</strong> Disparos em massa podem resultar em banimento pelo WhatsApp. Use intervalos maiores e listas menores.</span>
+        </div>
+      </div>
+
+    </div><!-- /compose-scroll -->
+
+    <!-- Send sticky -->
+    <div class="send-sticky">
+      <button class="btn-primary" id="sendBtn" onclick="startSend()" disabled aria-label="Iniciar disparo">
+        <svg aria-hidden="true" focusable="false" width="16" height="16"><use href="#icon-send"/></svg>
+        <span class="btn-label">Iniciar Disparo</span>
+        <span class="btn-spinner" aria-hidden="true"></span>
+      </button>
+    </div>
+
+    <!-- Progress overlay (absolute, covers entire compose-pane) -->
+    <div class="progress-box" id="progressBox" role="region" aria-label="Progresso do disparo">
+      <div class="progress-header">
+        <span id="progLabel">Enviando...</span>
+        <span id="progCounter" style="font-family:'Geist Mono',monospace;font-weight:500"></span>
+      </div>
+      <div class="progress-bar-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Progresso">
+        <div class="progress-bar" id="progBar"></div>
+      </div>
+      <div class="progress-log" id="progLog" aria-live="polite" aria-label="Log de envio"></div>
+      <div class="progress-actions" id="progressActions" style="display:none">
+        <button class="btn-retry" id="retryBtn" onclick="startSend()">&#8635; Tentar novamente</button>
+      </div>
+      <div class="progress-footer">
+        <button class="btn-stop" id="stopBtn" onclick="stopSend()" style="display:none" aria-label="Parar disparo">
+          <svg aria-hidden="true" focusable="false" width="15" height="15"><use href="#icon-stop"/></svg>
+          Parar disparo
+        </button>
+        <button class="btn-close-progress" id="closeProgressBtn" onclick="closeProgressView()" style="display:none">
+          Fechar
+        </button>
       </div>
     </div>
-  </div>
-</div>
+
+  </div><!-- /compose-pane -->
+
+</div><!-- /app -->
 
 <!-- IMPORT MODAL -->
-<div id="importModal">
+<div id="importModal" role="dialog" aria-modal="true" aria-labelledby="importModalTitle">
   <div class="import-card">
-    <button class="qr-close" onclick="closeImportModal()">×</button>
-    <h2>📊 Importar Planilha</h2>
+    <button class="qr-close" onclick="closeImportModal()" aria-label="Fechar importação">
+      <svg aria-hidden="true" focusable="false" width="16" height="16"><use href="#icon-x"/></svg>
+    </button>
+    <h2 id="importModalTitle">
+      <svg aria-hidden="true" focusable="false" width="16" height="16" style="vertical-align:middle;margin-right:6px"><use href="#icon-table"/></svg>
+      Importar Planilha
+    </h2>
     <p class="import-sub">Importe contatos de um arquivo Excel ou CSV</p>
     <div class="import-step active" id="importStep1">
       <div class="import-file-zone" id="importFileZone">
+        <label for="importFileInput" class="sr-only">Selecionar arquivo de planilha</label>
         <input type="file" id="importFileInput" accept=".xlsx,.xls,.csv"/>
-        <div class="icon">📂</div>
+        <svg aria-hidden="true" focusable="false" class="import-zone-icon" width="32" height="32"><use href="#icon-folder"/></svg>
         <p><strong>Clique ou arraste</strong> um arquivo aqui<br>.xlsx, .xls ou .csv</p>
       </div>
-      <div id="importFileError" style="font-size:12px;color:var(--red);margin-top:8px;min-height:16px"></div>
+      <div id="importFileError" role="alert" aria-live="assertive" style="font-size:12px;color:var(--red);margin-top:8px;min-height:16px"></div>
     </div>
     <div class="import-step" id="importStep2">
       <div class="import-col-row">
         <div>
-          <div class="field-label" style="margin-bottom:6px">Coluna dos telefones *</div>
+          <label for="importPhoneCol" class="field-label" style="margin-bottom:6px">Coluna dos telefones *</label>
           <select class="import-select" id="importPhoneCol"></select>
         </div>
         <div>
-          <div class="field-label" style="margin-bottom:6px">Coluna dos nomes (opcional)</div>
+          <label for="importNameCol" class="field-label" style="margin-bottom:6px">Coluna dos nomes (opcional)</label>
           <select class="import-select" id="importNameCol"><option value="">— nenhuma —</option></select>
         </div>
       </div>
@@ -229,41 +410,30 @@
   </div>
 </div>
 
-<!-- PHONES MODAL -->
-<div id="phonesModal">
+<!-- PHONES MODAL — hidden stub for trapFocus/ESC handler compat -->
+<div id="phonesModal" role="dialog" aria-modal="true" aria-labelledby="phonesModalTitle" style="display:none">
   <div class="phones-card">
-    <div class="phones-card-header">
-      <h2>📱 Telefones</h2>
-      <span id="phonesModalCount" class="phones-modal-count">0 / 10</span>
-      <button class="qr-close" onclick="closePhonesModal()">×</button>
-    </div>
-    <div id="phonesListEl" class="phones-list-el"></div>
-    <div class="phones-add-area">
-      <input type="text" id="phoneNameInput" placeholder="Nome do telefone (ex: Celular Yuri)" maxlength="50"
-        onkeydown="if(event.key==='Enter') doAddPhone()"/>
-      <button class="btn-add-phone" id="btnAddPhone" onclick="doAddPhone()">＋ Adicionar</button>
-    </div>
-    <div class="phones-limit-note" id="phonesLimitNote" style="display:none">
-      Limite de 10 telefones por sessão atingido.
-    </div>
+    <h2 id="phonesModalTitle" class="sr-only">Telefones</h2>
   </div>
 </div>
 
 <!-- QR MODAL -->
-<div id="qrModal">
+<div id="qrModal" role="dialog" aria-modal="true" aria-labelledby="qrModalTitle">
   <div class="qr-card">
-    <button class="qr-close" onclick="closeQrModal()" title="Fechar">&#x2715;</button>
+    <button class="qr-close" onclick="closeQrModal()" aria-label="Fechar QR Code">
+      <svg aria-hidden="true" focusable="false" width="16" height="16"><use href="#icon-x"/></svg>
+    </button>
     <h2 id="qrModalTitle">Conectar WhatsApp</h2>
-    <div id="qrLoading">
-      <div class="spinner"></div>
+    <div id="qrLoading" aria-live="polite">
+      <div class="spinner" role="status" aria-label="Carregando"></div>
       <span id="qrLoadingMsg">Abrindo navegador, aguarde...</span>
     </div>
-    <div id="qrError">
+    <div id="qrError" role="alert">
       <span id="qrErrorMsg">Falha na conexão.</span>
       <button class="btn-primary" style="padding:8px 20px;font-size:13px" onclick="retryCurrentPhone()">Tentar novamente</button>
     </div>
     <p id="qrInstructions" style="display:none">Escaneie o QR code abaixo com seu celular</p>
-    <img id="qrImage" src="" alt="QR Code" style="display:none"/>
+    <img id="qrImage" src="" alt="QR Code para conectar WhatsApp" style="display:none"/>
     <div class="qr-steps" id="qrSteps" style="display:none">
       <span>1.</span> Abra o WhatsApp no celular<br>
       <span>2.</span> Toque em ⋮ Menu → Dispositivos conectados<br>
@@ -273,6 +443,7 @@
   </div>
 </div>
 
+<div id="appToast" class="app-toast" role="status" aria-live="polite" aria-atomic="true"></div>
 <script src="/js/app.js"></script>
 </body>
 </html>

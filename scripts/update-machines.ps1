@@ -1,10 +1,10 @@
-# ARX Send - Atualizacao silenciosa para v2.0.1
+# ARX Send - Atualizacao silenciosa para v2.1.0
 # Execute em cada maquina: powershell -ExecutionPolicy Bypass -File update-machines.ps1
 
-$version  = "2.0.1"
+$version  = "2.1.0"
 $url      = "https://github.com/alclord/arx-send/releases/download/v$version/ARX-Send-Setup-$version.exe"
 $dest     = "$env:TEMP\ARX-Send-Setup-$version.exe"
-$expected = "a5125a4ae32f4c5f2d57c2c5237e290d687fe6cfdfe4428cb0691c88b520748e"
+$expected = "7d92659de32712cb23bc53b4178906d3fbaf8217e543b53cd9c35005137928ea"
 
 Write-Host "ARX Send - Atualizando para v$version..." -ForegroundColor Cyan
 

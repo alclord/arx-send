@@ -101,6 +101,7 @@ let currentQrPhoneId = null;      // telefone cujo QR está sendo exibido
 // ── Estado geral ──
 let contacts = [];
 let importedContacts = [];
+let _vsLimit = 200;
 let sheetHeaders = [];
 let selectedIds = new Set();
 let currentFilter = 'all';
@@ -176,7 +177,11 @@ socket.on('phone_contacts', ({ phoneId, contacts: c }) => {
 
 socket.on('send_start', ({ total }) => {
   isSending = true;
-  document.getElementById('progressBox').classList.add('show');
+  const progressBox = document.getElementById('progressBox');
+  progressBox.classList.add('show');
+  progressBox.classList.remove('done');
+  document.getElementById('progressActions').style.display = 'none';
+  document.getElementById('sendBtn').classList.remove('loading');
   setText(document.getElementById('progLog'), '');
   document.getElementById('progBar').style.width = '0%';
   setText(document.getElementById('progLabel'), 'Iniciando...');
@@ -207,21 +212,30 @@ socket.on('send_progress', ({ index, total, name, status, error }) => {
 
 socket.on('send_done', () => {
   isSending = false;
-  setText(document.getElementById('progLabel'), '✅ Disparo concluído!');
+  const sendBtn = document.getElementById('sendBtn');
+  sendBtn.classList.remove('loading');
+  sendBtn.style.display = '';
+  setText(document.getElementById('progLabel'), 'Disparo concluído!');
   document.getElementById('progBar').style.width = '100%';
-  document.getElementById('sendBtn').style.display = '';
+  document.getElementById('progressBox').classList.add('done');
   document.getElementById('stopBtn').style.display = 'none';
+  const closeBtn = document.getElementById('closeProgressBtn');
+  if (closeBtn) closeBtn.style.display = '';
   updateSendBtn();
   if (isElectron && window.electronAPI.showNotification) {
-    window.electronAPI.showNotification({ title: 'ARX Send', body: '✅ Disparo concluído!' });
+    window.electronAPI.showNotification({ title: 'ARX Send', body: 'Disparo concluído!' });
   }
 });
 
 socket.on('send_stopped', () => {
   isSending = false;
-  setText(document.getElementById('progLabel'), '⏹ Parado');
-  document.getElementById('sendBtn').style.display = '';
+  const sendBtn = document.getElementById('sendBtn');
+  sendBtn.classList.remove('loading');
+  sendBtn.style.display = '';
+  setText(document.getElementById('progLabel'), 'Parado');
   document.getElementById('stopBtn').style.display = 'none';
+  const closeBtn = document.getElementById('closeProgressBtn');
+  if (closeBtn) closeBtn.style.display = '';
   updateSendBtn();
 });
 
@@ -232,6 +246,12 @@ socket.on('update_status', ({ status, version, progress }) => {
   const progBar = document.getElementById('updateProgBar');
   const pctEl = document.getElementById('updatePct');
   const btn = document.getElementById('updateBtn');
+
+  const dot = document.getElementById('updateDot');
+  const wrap = document.getElementById('updateWrap');
+  const isActive = status === 'available' || status === 'ready';
+  if (dot) dot.style.display = isActive ? 'block' : 'none';
+  if (wrap) wrap.classList.toggle('available', isActive);
 
   if (status === 'available') {
     banner.classList.add('show');
@@ -283,6 +303,8 @@ async function checkForUpdates() {
   const text = document.getElementById('updateText');
   const btn = document.getElementById('checkUpdateBtn');
   const updateBtn = document.getElementById('updateBtn');
+  const wrap = document.getElementById('updateWrap');
+  wrap?.classList.add('checking');
   btn.disabled = true;
   setText(btn, 'Verificando...');
   setText(text, 'Verificando atualizações...');
@@ -290,6 +312,7 @@ async function checkForUpdates() {
 
   if (isElectron && window.electronAPI.checkForUpdates) {
     const result = await window.electronAPI.checkForUpdates();
+    wrap?.classList.remove('checking');
     btn.disabled = false;
     setText(btn, 'Verificar atualizações');
     if (result.updateAvailable) {
@@ -311,6 +334,7 @@ async function checkForUpdates() {
   try {
     const res = await fetch('/api/update/check');
     const data = await res.json();
+    wrap?.classList.remove('checking');
     btn.disabled = false;
     setText(btn, 'Verificar atualizações');
     if (data.updateAvailable) {
@@ -320,6 +344,7 @@ async function checkForUpdates() {
       setText(text, 'Você já está na versão mais recente.');
     }
   } catch {
+    wrap?.classList.remove('checking');
     btn.disabled = false;
     setText(btn, 'Verificar atualizações');
     setText(text, 'Erro ao verificar atualizações.');
@@ -344,18 +369,20 @@ function updateHeaderSummary() {
   const ready = phones.filter(p => p.status === 'ready').length;
   const total = phones.length;
   const el = document.getElementById('phonesSummaryText');
+  const summary = document.getElementById('phonesSummary');
+  summary.classList.remove('state-none', 'state-ready', 'state-warn');
   if (total === 0) {
     setText(el, 'Nenhum telefone');
+    summary.classList.add('state-none');
   } else {
     setText(el, `${ready}/${total} conectado${ready !== 1 ? 's' : ''}`);
+    summary.classList.add(ready > 0 ? 'state-ready' : 'state-warn');
   }
 }
 
 // ── Modal de telefones ──
 function openPhonesModal() {
-  renderPhonesList();
-  document.getElementById('phonesModal').classList.add('show');
-  document.getElementById('phoneNameInput').focus();
+  document.getElementById('phoneNameInput')?.focus();
 }
 
 function closePhonesModal() {
@@ -437,8 +464,8 @@ function renderPhonesList() {
 
     const removeBtn = document.createElement('button');
     removeBtn.className = 'btn-phone-remove';
-    removeBtn.textContent = '×';
-    removeBtn.title = 'Remover telefone';
+    removeBtn.setAttribute('aria-label', `Remover ${phone.name}`);
+    removeBtn.innerHTML = '<svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
     removeBtn.onclick = () => doRemovePhone(phone.id, phone.name);
 
     actions.appendChild(connectBtn);
@@ -594,8 +621,13 @@ async function reloadContacts() {
 // ── Filtros e lista de contatos ──
 function setFilter(f, btn) {
   currentFilter = f;
-  document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+  _vsLimit = 200;
+  document.querySelectorAll('.filter-tab').forEach(b => {
+    b.classList.remove('active');
+    b.setAttribute('aria-selected', 'false');
+  });
   btn.classList.add('active');
+  btn.setAttribute('aria-selected', 'true');
   renderList();
 }
 
@@ -605,11 +637,14 @@ function renderList() {
 
   if (!contacts.length && !importedContacts.length) {
     const hasReady = phones.some(p => p.status === 'ready');
-    const icon = hasReady ? '📭' : '📱';
+    const iconId = hasReady ? 'icon-message-square' : 'icon-smartphone';
     const msg = hasReady
       ? 'Nenhum contato carregado'
       : 'Adicione e conecte um telefone<br>para ver seus contatos';
-    setHTML(list, `<div class="empty-state"><div class="icon">${icon}</div><p>${msg}</p></div>`);
+    const cta = hasReady
+      ? `<button class="load-more-btn" onclick="reloadContacts()">Recarregar contatos</button>`
+      : '';
+    setHTML(list, `<div class="empty-state"><svg aria-hidden="true" focusable="false" class="empty-icon" width="36" height="36"><use href="#${iconId}"/></svg><p>${msg}</p>${cta}</div>`);
     return;
   }
 
@@ -623,12 +658,13 @@ function renderList() {
 
   setText(document.getElementById('listCount'), `${filtered.length} itens`);
   if (!filtered.length) {
-    setHTML(list, `<div class="empty-state"><div class="icon">🔍</div><p>Nenhum resultado para "<em>${esc(q)}</em>"</p></div>`);
+    setHTML(list, `<div class="empty-state"><svg aria-hidden="true" focusable="false" class="empty-icon" width="36" height="36"><use href="#icon-search"/></svg><p>Nenhum resultado para "<em>${esc(q)}</em>"</p></div>`);
     return;
   }
 
+  const visible = filtered.slice(0, _vsLimit);
   const frag = document.createDocumentFragment();
-  for (const c of filtered) {
+  for (const c of visible) {
     const sel = selectedIds.has(c.id);
     const div = document.createElement('div');
     div.className = 'contact-item' + (sel ? ' selected' : '');
@@ -677,6 +713,15 @@ function renderList() {
   list.innerHTML = '';
   list.appendChild(frag);
 
+  if (filtered.length > _vsLimit) {
+    const remaining = filtered.length - _vsLimit;
+    const btn = document.createElement('button');
+    btn.className = 'load-more-btn';
+    btn.textContent = `Mostrar mais ${remaining} contato${remaining !== 1 ? 's' : ''}`;
+    btn.onclick = () => { _vsLimit += 200; renderList(); };
+    list.appendChild(btn);
+  }
+
   setText(document.getElementById('selBadge'), selectedIds.size);
   updateSendBtn();
 }
@@ -698,7 +743,10 @@ function selectAll() {
   renderList(); updateSendBtn();
 }
 
-function deselectAll() { selectedIds.clear(); renderList(); updateSendBtn(); }
+function deselectAll() {
+  if (selectedIds.size > 10 && !confirm(`Remover ${selectedIds.size} contatos selecionados?`)) return;
+  selectedIds.clear(); renderList(); updateSendBtn();
+}
 
 function setMode(mode, btn) {
   sendMode = mode;
@@ -709,14 +757,26 @@ function setMode(mode, btn) {
   updateSendBtn();
 }
 
-document.querySelectorAll('.delay-opt').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.delay-opt').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    selectedDelay = parseInt(btn.dataset.v);
-    setText(document.getElementById('sumDelay'), btn.textContent);
-  });
-});
+function getDelayMs() {
+  const val = Math.max(1, parseInt(document.getElementById('delayVal')?.value, 10) || 3);
+  const unit = document.getElementById('delayUnit')?.value || 's';
+  return unit === 'm' ? val * 60000 : val * 1000;
+}
+function getDelayLabel() {
+  const val = Math.max(1, parseInt(document.getElementById('delayVal')?.value, 10) || 3);
+  const unit = document.getElementById('delayUnit')?.value || 's';
+  return unit === 'm' ? `${val}min` : `${val}s`;
+}
+function updateDelayHint() {
+  const val = Math.max(1, parseInt(document.getElementById('delayVal')?.value, 10) || 3);
+  const unit = document.getElementById('delayUnit')?.value || 's';
+  const label = unit === 'm' ? (val === 1 ? 'minuto' : 'minutos') : (val === 1 ? 'segundo' : 'segundos');
+  const el = document.getElementById('delayHint');
+  if (el) setText(el, `Envio a cada ${val} ${label}`);
+  updateSummary();
+}
+document.getElementById('delayVal')?.addEventListener('input', updateDelayHint);
+document.getElementById('delayUnit')?.addEventListener('change', updateDelayHint);
 
 let _draftTimer = null;
 function saveDraft() {
@@ -768,7 +828,7 @@ async function handleFile(file) {
     img.alt = 'preview';
     thumb.appendChild(img);
   } else {
-    thumb.textContent = fileIcon(data.mimetype, data.original);
+    thumb.innerHTML = fileIcon(data.mimetype, data.original);
   }
   document.getElementById('filePreview').classList.add('show');
   document.getElementById('fileZone').style.display = 'none';
@@ -782,11 +842,7 @@ function removeFile() {
   updateSendBtn();
 }
 
-function switchTab(tab, btn) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById('tab-' + tab).classList.add('active');
+function switchTab(tab) {
   if (tab === 'send') updateSummary();
 }
 
@@ -794,6 +850,7 @@ function updateSummary() {
   const sendPhoneId = getSelectedSendPhoneId();
   const phone = phones.find(p => p.id === sendPhoneId);
   setText(document.getElementById('sumContacts'), selectedIds.size);
+  setText(document.getElementById('sumDelay'), getDelayLabel());
   setText(document.getElementById('sumMsg'), sendMode === 'file' ? '(sem texto)' : (document.getElementById('msgText').value.trim() || '—'));
   setText(document.getElementById('sumFile'), uploadedFile ? uploadedFile.original : '—');
   setText(document.getElementById('sumPhone'), phone ? phone.name : '—');
@@ -813,7 +870,9 @@ async function startSend() {
   if (!sendPhoneId) { alert('Selecione um telefone para enviar.'); return; }
 
   updateSummary();
-  switchTab('send', document.querySelector('.tab[data-tab="send"]'));
+  const sendBtn = document.getElementById('sendBtn');
+  sendBtn.classList.add('loading');
+  sendBtn.disabled = true;
 
   const contactsData = {};
   importedContacts.forEach(c => { if (c.rowData) contactsData[c.id] = c.rowData; });
@@ -826,32 +885,49 @@ async function startSend() {
         contactIds: [...selectedIds],
         message: sendMode === 'file' ? '' : document.getElementById('msgText').value,
         filename: uploadedFile?.filename || null,
-        delayMs: selectedDelay,
+        delayMs: getDelayMs(),
         phoneId: sendPhoneId,
         contactsData: Object.keys(contactsData).length ? contactsData : undefined,
       }),
     });
     const data = await res.json();
     if (!data.ok) {
+      document.getElementById('sendBtn').classList.remove('loading');
+      document.getElementById('sendBtn').style.display = '';
       setText(document.getElementById('progLabel'), '❌ ' + (data.error || 'Erro ao iniciar disparo'));
       document.getElementById('progressBox').classList.add('show');
+      document.getElementById('progressActions').style.display = '';
     }
   } catch (e) {
+    document.getElementById('sendBtn').classList.remove('loading');
+    document.getElementById('sendBtn').style.display = '';
     setText(document.getElementById('progLabel'), '❌ Erro de comunicação: ' + e.message);
     document.getElementById('progressBox').classList.add('show');
+    document.getElementById('progressActions').style.display = '';
   }
 }
 
 async function stopSend() { await api('/stop', { method: 'POST' }); }
 
+function closeProgressView() {
+  document.getElementById('progressBox').classList.remove('show');
+  const closeBtn = document.getElementById('closeProgressBtn');
+  if (closeBtn) closeBtn.style.display = 'none';
+}
+
+function minimizeWindow() { window.electronAPI?.minimize?.(); }
+function maximizeWindow() { window.electronAPI?.maximize?.(); }
+function closeWindow() { window.electronAPI?.close?.(); }
+
 function fileIcon(mime, name) {
-  if (mime.startsWith('image/')) return '🖼️';
-  if (mime.startsWith('video/')) return '🎥';
-  if (mime.startsWith('audio/')) return '🎵';
-  if (mime.includes('pdf')) return '📄';
-  if (mime.includes('word') || /\.docx?$/.test(name)) return '📝';
-  if (mime.includes('sheet') || /\.xlsx?$/.test(name)) return '📊';
-  return '📁';
+  const svg = (path) => `<svg aria-hidden="true" focusable="false" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
+  if (mime.startsWith('image/')) return svg('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>');
+  if (mime.startsWith('video/')) return svg('<polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/>');
+  if (mime.startsWith('audio/')) return svg('<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>');
+  if (mime.includes('pdf')) return svg('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>');
+  if (mime.includes('word') || /\.docx?$/.test(name)) return svg('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>');
+  if (mime.includes('sheet') || /\.xlsx?$/.test(name)) return svg('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/>');
+  return svg('<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>');
 }
 function formatBytes(b) {
   if (b < 1024) return b + ' B';
@@ -1065,6 +1141,7 @@ async function confirmImport() {
   updateSendBtn();
   updateVarsBar();
   closeImportModal();
+  showToast(`${importedContacts.length} contatos importados com sucesso`, 'success');
 }
 
 // ── Atalhos de teclado ──
@@ -1086,3 +1163,29 @@ document.addEventListener('keydown', (e) => {
     if (!btn.disabled) startSend();
   }
 });
+
+// ── Toast ──
+function showToast(msg, type) {
+  const t = document.getElementById('appToast');
+  t.textContent = msg;
+  t.className = 'app-toast show ' + (type || '');
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.classList.remove('show'), 4000);
+}
+
+// ── Focus trap ──
+function trapFocus(modal) {
+  const sel = 'button:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
+  modal.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab' || !modal.classList.contains('show')) return;
+    const els = [...modal.querySelectorAll(sel)].filter(el => {
+      const s = getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden';
+    });
+    if (!els.length) return;
+    const first = els[0], last = els[els.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+}
+['importModal', 'phonesModal', 'qrModal'].forEach(id => trapFocus(document.getElementById(id)));
