@@ -1,6 +1,6 @@
 const config = require('../app/config');
 const { sanitizeSessionId } = require('../utils/helpers');
-const { getSession, phonesListPayload } = require('../services/sessionService');
+const { getSession, phonesListPayload, connectPhone } = require('../services/sessionService');
 const { updateState } = require('../services/updateService');
 
 function registerSocketHandlers(io) {
@@ -22,6 +22,15 @@ function registerSocketHandlers(io) {
       for (const phone of Object.values(sess.phones)) {
         if (phone.contacts.length > 0) {
           socket.emit('phone_contacts', { phoneId: phone.id, contacts: phone.contacts });
+        }
+      }
+
+      // Auto-reconectar telefones salvos que não estão ativos
+      for (const phone of Object.values(sess.phones)) {
+        if (!phone.client && phone.status === 'disconnected') {
+          connectPhone(sessionId, phone.id, io).catch(err =>
+            console.error(`[${sessionId}:${phone.id}] Auto-reconectar erro:`, err)
+          );
         }
       }
 

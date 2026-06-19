@@ -143,12 +143,16 @@ function removePhone(sessionId, phoneId) {
   if (!phone) return;
   clearTimeout(phone.watchdog);
   if (phone.client) {
+    phone.client.logout().catch(() => {});
     phone.client.destroy().catch(() => {});
     phone.client = null;
   }
   delete sess.phones[phoneId];
   savePhones(sessionId);
   try { fs.unlinkSync(contactsCachePath(phoneId)); } catch {}
+  // Remove saved WhatsApp auth data for this phone
+  const authDir = path.join(config.sessionDir, sessionId, phoneId);
+  fs.rm(authDir, { recursive: true, force: true }, () => {});
 }
 
 // ── Watchdog por telefone ──
@@ -342,9 +346,15 @@ async function loadContactsForPhone(sessionId, phoneId, io, attempt = 1) {
 // ── Limpeza ──
 
 async function destroyAllSessions() {
-  for (const [sessionId, sess] of Object.entries(sessions)) {
-    for (const phoneId of Object.keys(sess.phones)) {
-      await disconnectPhone(sessionId, phoneId);
+  for (const [, sess] of Object.entries(sessions)) {
+    for (const [phoneId, phone] of Object.entries(sess.phones)) {
+      clearTimeout(phone.watchdog);
+      phone.watchdog = null;
+      if (phone.client) {
+        try { await Promise.race([phone.client.destroy(), sleep(5000)]); } catch {}
+        phone.client = null;
+      }
+      phone.status = 'disconnected';
     }
   }
 }
