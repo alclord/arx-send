@@ -174,8 +174,10 @@ if (!gotLock) {
     try {
       const result = await updater.check();
       if (!result.updateAvailable) {
+        updater._pendingUpdate = null;
         return { ok: true, updateAvailable: false };
       }
+      updater._pendingUpdate = result;
       return {
         ok: true,
         updateAvailable: true,
@@ -186,12 +188,14 @@ if (!gotLock) {
       return { ok: false, error: err.message };
     }
   });
-  ipcMain.handle('download-update', async (event, updateInfo) => {
+  ipcMain.handle('download-update', async () => {
     if (!updater) return { ok: false, error: 'Updater não inicializado' };
+    if (!updater._pendingUpdate) return { ok: false, error: 'Nenhuma atualização verificada. Clique em Verificar novamente.' };
     try {
-      const result = await updater.downloadAndApply(updateInfo);
+      const result = await updater.downloadAndApply(updater._pendingUpdate);
       return { ok: true, ...result };
     } catch (err) {
+      updater.onStatus({ status: 'error', message: err.message });
       return { ok: false, error: err.message };
     }
   });

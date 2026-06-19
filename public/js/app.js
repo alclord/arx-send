@@ -285,9 +285,15 @@ async function installUpdate() {
   if (!pendingUpdateInfo) return;
   if (isElectron && window.electronAPI.downloadUpdate) {
     const btn = document.getElementById('updateBtn');
+    const text = document.getElementById('updateText');
     btn.disabled = true;
     setText(btn, 'Baixando...');
-    await window.electronAPI.downloadUpdate(pendingUpdateInfo);
+    const result = await window.electronAPI.downloadUpdate(pendingUpdateInfo);
+    if (result && !result.ok) {
+      btn.disabled = false;
+      setText(btn, pendingUpdateInfo.electronChanged ? 'Baixar instalador' : 'Baixar e reiniciar');
+      setText(text, `Erro: ${result.error}`);
+    }
     return;
   }
   if (!confirm('O aplicativo será fechado para instalar a atualização e reabrirá automaticamente.\n\nDeseja continuar?')) return;
