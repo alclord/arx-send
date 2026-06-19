@@ -101,15 +101,6 @@ body{font-family:'Geist',sans-serif;background:var(--bg);color:var(--text);heigh
 .update-wrap.available .update-dot{display:block}
 .update-wrap.available .update-btn{color:var(--yellow)}
 
-/* Window controls */
-.win-controls{display:flex;align-items:center;flex-shrink:0;margin-left:4px}
-.win-btn{
-  width:34px;height:30px;background:none;border:none;color:var(--muted);
-  font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;
-  transition:background .12s,color .12s;border-radius:5px;
-}
-.win-btn:hover{background:var(--surface2);color:var(--text)}
-.win-btn.close:hover{background:rgba(240,71,71,.15);color:var(--red)}
 
 /* ── APP LAYOUT — 3-pane ── */
 .app{display:flex;flex:1;overflow:hidden;min-height:0}

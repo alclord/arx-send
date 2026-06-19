@@ -934,9 +934,6 @@ function closeProgressView() {
   if (closeBtn) closeBtn.style.display = 'none';
 }
 
-function minimizeWindow() { window.electronAPI?.minimize?.(); }
-function maximizeWindow() { window.electronAPI?.maximize?.(); }
-function closeWindow() { window.electronAPI?.close?.(); }
 
 function fileIcon(mime, name) {
   const svg = (path) => `<svg aria-hidden="true" focusable="false" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
