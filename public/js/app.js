@@ -574,6 +574,7 @@ function updatePhoneSourceSelect() {
 
   if (readyPhones.length === 0) {
     bar.style.display = 'none';
+    sel.innerHTML = '';
     if (selectedPhoneId) {
       selectedPhoneId = null;
       contacts = [];
@@ -588,7 +589,6 @@ function updatePhoneSourceSelect() {
     `<option value="${esc(p.id)}">${esc(p.name)} (${p.contactCount || 0})</option>`
   ).join('');
 
-  // Manter seleção anterior se ainda disponível
   if (prev && readyPhones.find(p => p.id === prev)) {
     sel.value = prev;
   } else {
