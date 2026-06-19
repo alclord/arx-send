@@ -25,6 +25,8 @@ if (isElectron && window.electronAPI.onUpdateStatus) {
     const pctEl = document.getElementById('updatePct');
     const btn = document.getElementById('updateBtn');
     const checkBtn = document.getElementById('checkUpdateBtn');
+    const banner = document.getElementById('updateBanner');
+    banner?.classList.add('show');
 
     if (status === 'downloading') {
       checkBtn.style.display = 'none';
@@ -317,7 +319,9 @@ async function checkForUpdates() {
   const btn = document.getElementById('checkUpdateBtn');
   const updateBtn = document.getElementById('updateBtn');
   const wrap = document.getElementById('updateWrap');
+  const banner = document.getElementById('updateBanner');
   wrap?.classList.add('checking');
+  banner?.classList.add('show');
   btn.disabled = true;
   setText(btn, 'Verificando...');
   setText(text, 'Verificando atualizações...');
@@ -340,6 +344,7 @@ async function checkForUpdates() {
     } else {
       setText(text, 'Você já está na versão mais recente.');
       pendingUpdateInfo = null;
+      setTimeout(() => banner?.classList.remove('show'), 3000);
     }
     return;
   }
@@ -355,6 +360,7 @@ async function checkForUpdates() {
       updateBtn.style.display = '';
     } else {
       setText(text, 'Você já está na versão mais recente.');
+      setTimeout(() => banner?.classList.remove('show'), 3000);
     }
   } catch {
     wrap?.classList.remove('checking');
