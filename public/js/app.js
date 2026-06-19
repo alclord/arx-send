@@ -3,6 +3,13 @@ const isElectron = !!(window.electronAPI && window.electronAPI.isElectron);
 
 let pendingUpdateInfo = null;
 
+if (isElectron && window.electronAPI.getAppVersion) {
+  window.electronAPI.getAppVersion().then(v => {
+    const el = document.getElementById('appVersion');
+    if (el && v) el.textContent = 'v' + v;
+  });
+}
+
 function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
