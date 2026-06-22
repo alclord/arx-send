@@ -18,7 +18,7 @@ function setText(el, text) { el.textContent = text; }
 function setHTML(el, html) { el.innerHTML = html; }
 
 if (isElectron && window.electronAPI.onUpdateStatus) {
-  window.electronAPI.onUpdateStatus(({ status, progress, message, type }) => {
+  window.electronAPI.onUpdateStatus(({ status, progress, message, type, version, electronChanged }) => {
     const text = document.getElementById('updateText');
     const progWrap = document.getElementById('updateProgWrap');
     const progBar = document.getElementById('updateProgBar');
@@ -26,9 +26,27 @@ if (isElectron && window.electronAPI.onUpdateStatus) {
     const btn = document.getElementById('updateBtn');
     const checkBtn = document.getElementById('checkUpdateBtn');
     const banner = document.getElementById('updateBanner');
+    const dot = document.getElementById('updateDot');
+    const wrap = document.getElementById('updateWrap');
     banner?.classList.add('show');
 
-    if (status === 'downloading') {
+    if (status === 'available') {
+      pendingUpdateInfo = { updateAvailable: true, version, electronChanged };
+      if (electronChanged) {
+        setHTML(text, `Nova versão <strong>${esc(version)}</strong> disponível (requer instalador completo)`);
+        setText(btn, 'Baixar instalador');
+      } else {
+        setHTML(text, `Nova versão <strong>${esc(version)}</strong> disponível`);
+        setText(btn, 'Baixar e reiniciar');
+      }
+      btn.style.display = '';
+      btn.disabled = false;
+      progWrap.style.display = 'none';
+      setText(pctEl, '');
+      checkBtn.style.display = 'none';
+      if (dot) dot.style.display = 'block';
+      if (wrap) wrap.classList.add('available');
+    } else if (status === 'downloading') {
       checkBtn.style.display = 'none';
       setText(text, type === 'asar'
         ? 'Baixando atualização leve...'
@@ -1200,6 +1218,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (document.getElementById('importModal').classList.contains('show')) closeImportModal();
     else if (document.getElementById('qrModal').classList.contains('show')) closeQrModal();
+    else if (document.getElementById('diagModal').classList.contains('show')) closeDiagModal();
     else if (document.getElementById('phonesModal').classList.contains('show')) closePhonesModal();
     return;
   }
@@ -1211,6 +1230,62 @@ document.addEventListener('keydown', (e) => {
     if (!btn.disabled) startSend();
   }
 });
+
+// ── Diagnóstico ──
+let _diagLines = [];
+
+async function openDiagModal() {
+  document.getElementById('diagModal').classList.add('show');
+  document.getElementById('diagLoading').style.display = '';
+  document.getElementById('diagLogLines').innerHTML = '';
+  document.getElementById('diagFile').textContent = '';
+  if (isElectron) document.getElementById('diagOpenFolder').style.display = '';
+
+  try {
+    const headers = {};
+    if (_authToken) headers['x-auth-token'] = _authToken;
+    const res = await fetch('/api/logs', { headers });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const { lines, file } = await res.json();
+    _diagLines = lines || [];
+    document.getElementById('diagFile').textContent = file ? `Arquivo: ${file}` : '';
+    document.getElementById('diagLoading').style.display = 'none';
+    const container = document.getElementById('diagLogLines');
+    if (!_diagLines.length) {
+      container.innerHTML = '<span style="color:var(--muted)">Nenhum log disponível ainda.</span>';
+    } else {
+      container.innerHTML = _diagLines.map(line => {
+        const cls = line.includes('] [ERROR]') ? 'log-error' : line.includes('] [WARN]') ? 'log-warn' : 'log-info';
+        return `<div class="diag-log-line ${cls}">${esc(line)}</div>`;
+      }).join('');
+    }
+    const wrap = document.getElementById('diagLogWrap');
+    wrap.scrollTop = wrap.scrollHeight;
+  } catch (err) {
+    document.getElementById('diagLoading').style.display = 'none';
+    document.getElementById('diagLogLines').innerHTML = `<span style="color:var(--red)">Erro ao carregar logs: ${esc(err.message)}</span>`;
+  }
+}
+
+function closeDiagModal() {
+  document.getElementById('diagModal').classList.remove('show');
+}
+
+async function copyDiagLogs() {
+  if (!_diagLines.length) return;
+  try {
+    await navigator.clipboard.writeText(_diagLines.join('\n'));
+    showToast('Logs copiados!', 'success');
+  } catch {
+    showToast('Erro ao copiar logs', 'error');
+  }
+}
+
+async function openDiagFolder() {
+  if (isElectron && window.electronAPI.openLogsFolder) {
+    await window.electronAPI.openLogsFolder();
+  }
+}
 
 // ── Toast ──
 function showToast(msg, type) {
@@ -1236,4 +1311,4 @@ function trapFocus(modal) {
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   });
 }
-['importModal', 'phonesModal', 'qrModal'].forEach(id => trapFocus(document.getElementById(id)));
+['importModal', 'phonesModal', 'qrModal', 'diagModal'].forEach(id => trapFocus(document.getElementById(id)));

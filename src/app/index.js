@@ -8,6 +8,7 @@ const { registerSendRoutes } = require('../routes/sendRoutes');
 const { registerSheetRoutes } = require('../routes/sheetRoutes');
 const { registerUpdateRoutes } = require('../routes/updateRoutes');
 const { registerUploadRoutes } = require('../routes/uploadRoutes');
+const { registerLogRoutes } = require('../routes/logRoutes');
 const { registerSocketHandlers } = require('../socket/handlers');
 const { multerErrorHandler } = require('../services/mediaService');
 const { startCleanupIntervals, stopCleanupIntervals } = require('../services/cleanupService');
@@ -29,6 +30,7 @@ function createApp() {
 
 function registerAllRoutes(app, io) {
   registerUploadRoutes(app);
+  registerLogRoutes(app);
   registerSessionRoutes(app, io);
   registerSendRoutes(app, io);
   registerSheetRoutes(app);
@@ -37,7 +39,7 @@ function registerAllRoutes(app, io) {
 }
 
 function ensureDirectories() {
-  [config.uploadsDir, config.cacheDir, config.sessionDir].forEach(d => {
+  [config.uploadsDir, config.cacheDir, config.logsDir, config.sessionDir].forEach(d => {
     if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
   });
 }

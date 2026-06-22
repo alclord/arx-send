@@ -527,6 +527,39 @@ textarea::placeholder{color:var(--muted)}
 .app-toast.success{border-color:rgba(37,211,102,.3);color:var(--accent)}
 .app-toast.error{border-color:rgba(240,71,71,.3);color:var(--red)}
 
+/* ── DIAGNOSTICS ── */
+.diag-wrap{position:relative;display:flex;align-items:center;margin-right:2px}
+.diag-btn{
+  width:30px;height:30px;background:none;border:1px solid transparent;border-radius:7px;
+  color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:all .15s;
+}
+.diag-btn:hover{background:var(--surface2);border-color:var(--border);color:var(--text)}
+#diagModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:var(--z-modal-backdrop);align-items:center;justify-content:center}
+#diagModal.show{display:flex}
+.diag-card{
+  position:relative;background:var(--surface);border:1px solid var(--border);border-radius:20px;
+  padding:28px;width:90%;max-width:740px;max-height:82vh;display:flex;flex-direction:column;gap:14px;
+}
+.diag-card h2{font-size:18px;font-weight:800;letter-spacing:-.2px}
+.diag-file{font-size:11px;color:var(--muted);font-family:'Geist Mono',monospace;word-break:break-all;margin-top:-6px}
+.diag-log-wrap{
+  flex:1;overflow-y:auto;background:var(--bg);border:1px solid var(--border);
+  border-radius:10px;padding:12px;font-family:'Geist Mono',monospace;font-size:11px;
+  line-height:1.65;min-height:200px;max-height:400px;
+}
+.diag-log-line{white-space:pre-wrap;word-break:break-all}
+.diag-log-line.log-info{color:var(--muted)}
+.diag-log-line.log-warn{color:var(--yellow)}
+.diag-log-line.log-error{color:var(--red)}
+.diag-footer{display:flex;gap:8px;justify-content:flex-end;flex-shrink:0}
+.btn-diag{
+  padding:7px 16px;background:var(--surface2);border:1px solid var(--border);
+  border-radius:8px;color:var(--text);font-family:'Geist',sans-serif;font-size:12px;
+  font-weight:500;cursor:pointer;transition:all .15s;
+}
+.btn-diag:hover{background:var(--border);border-color:var(--muted)}
+
 /* ── REDUCED MOTION ── */
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}

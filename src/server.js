@@ -3,9 +3,13 @@ const { createApp, startApp, stopCleanupIntervals } = require('./app');
 const { createHTTPServer } = require('./app/http');
 const { checkForUpdates } = require('./services/updateService');
 const { destroyAllSessions } = require('./services/sessionService');
+const logger = require('./utils/logger');
 
 process.on('uncaughtException', (err) => console.error('Erro não tratado:', err));
 process.on('unhandledRejection', (reason) => console.error('Promise rejeitada sem tratamento:', reason));
+
+logger.init(config.logsDir);
+logger.info(`ARX Send v${config.CURRENT_VERSION} iniciando (modo servidor)`);
 
 const app = createApp();
 const { server, io } = createHTTPServer(app);

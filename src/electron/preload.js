@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   downloadUpdate: (info) => ipcRenderer.invoke('download-update', info),
   cancelUpdate: () => ipcRenderer.invoke('cancel-update'),
   onUpdateStatus: (cb) => ipcRenderer.on('update_status', (_, data) => cb(data)),
+  openLogsFolder: () => ipcRenderer.invoke('open-logs-folder'),
   platform: process.platform,
   isElectron: true,
 });

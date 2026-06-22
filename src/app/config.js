@@ -53,6 +53,7 @@ const appDataBase = IS_PKG
 
 const uploadsDir = path.join(appDataBase, 'uploads');
 const cacheDir = path.join(appDataBase, 'cache');
+const logsDir = path.join(appDataBase, 'logs');
 const sessionDir = process.platform === 'win32'
   ? path.join(process.env.LOCALAPPDATA || os.tmpdir(), APP_NAME, 'sessions')
   : path.join(appDataBase, '.wa_sessions');
@@ -67,5 +68,5 @@ module.exports = {
   UPDATE_CHECK_INITIAL_MS, UPDATE_CHECK_INTERVAL_MS,
   SESSION_TTL_MS, SEND_MAX_RETRIES, SEND_RETRY_BASE_MS,
   WA_FILE_LIMITS, ALLOWED_UPLOAD_EXTS, tmpDir,
-  appDataBase, uploadsDir, cacheDir, sessionDir
+  appDataBase, uploadsDir, cacheDir, logsDir, sessionDir
 };

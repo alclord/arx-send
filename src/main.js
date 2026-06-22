@@ -35,6 +35,10 @@ if (!gotLock) {
   const { AUTH_TOKEN } = require('./app/security');
   const { destroyAllSessions } = require('./services/sessionService');
 
+  const logger = require('./utils/logger');
+  logger.init(config.logsDir);
+  logger.info(`ARX Send v${config.CURRENT_VERSION} iniciando`);
+
   const appExpress = createApp();
   const { server, io } = createHTTPServer(appExpress);
   startApp(appExpress, io);
@@ -117,6 +121,18 @@ if (!gotLock) {
       currentVersion: config.CURRENT_VERSION,
       onStatus: sendUpdateStatus,
     });
+
+    setTimeout(async () => {
+      try {
+        const result = await updater.check();
+        if (result.updateAvailable) {
+          updater._pendingUpdate = result;
+          sendUpdateStatus({ status: 'available', version: result.version, electronChanged: result.electronChanged });
+        }
+      } catch (err) {
+        console.warn('[update] Verificação automática falhou:', err.message);
+      }
+    }, config.UPDATE_CHECK_INITIAL_MS);
 
     mainWindow.on('close', async (event) => {
       if (!app.isQuitting) {
@@ -206,6 +222,9 @@ if (!gotLock) {
   ipcMain.handle('cancel-update', () => {
     if (updater) updater.abort();
     return { ok: true };
+  });
+  ipcMain.handle('open-logs-folder', () => {
+    shell.openPath(config.logsDir);
   });
 
   app.whenReady().then(() => {

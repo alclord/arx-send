@@ -54,6 +54,10 @@
     <line x1="12" y1="9" x2="12" y2="13"/>
     <line x1="12" y1="17" x2="12.01" y2="17"/>
   </symbol>
+  <symbol id="icon-terminal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="4 17 10 11 4 5"/>
+    <line x1="12" y1="19" x2="20" y2="19"/>
+  </symbol>
   <symbol id="icon-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
     <line x1="18" y1="6" x2="6" y2="18"/>
     <line x1="6" y1="6" x2="18" y2="18"/>
@@ -106,6 +110,12 @@
   <button id="checkUpdateBtn" onclick="checkForUpdates()" style="display:none" aria-hidden="true" tabindex="-1">Verificar atualizações</button>
 
   <!-- Visible update icon button -->
+  <div class="diag-wrap">
+    <button class="diag-btn" onclick="openDiagModal()" aria-label="Diagnóstico do sistema" title="Diagnóstico">
+      <svg aria-hidden="true" focusable="false" width="15" height="15"><use href="#icon-terminal"/></svg>
+    </button>
+  </div>
+
   <div class="update-wrap" id="updateWrap">
     <button class="update-btn" onclick="checkForUpdates()" aria-label="Verificar atualizações">
       <svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -441,6 +451,26 @@
       <span>2.</span> Toque em ⋮ Menu → Dispositivos conectados<br>
       <span>3.</span> Toque em "Conectar um dispositivo"<br>
       <span>4.</span> Aponte a câmera para o QR code
+    </div>
+  </div>
+</div>
+
+<!-- DIAGNOSTICS MODAL -->
+<div id="diagModal" role="dialog" aria-modal="true" aria-labelledby="diagModalTitle">
+  <div class="diag-card">
+    <button class="qr-close" onclick="closeDiagModal()" aria-label="Fechar diagnóstico">
+      <svg aria-hidden="true" focusable="false" width="16" height="16"><use href="#icon-x"/></svg>
+    </button>
+    <h2 id="diagModalTitle">Diagnóstico do sistema</h2>
+    <p class="diag-file" id="diagFile"></p>
+    <div class="diag-log-wrap" id="diagLogWrap">
+      <div id="diagLoading" style="color:var(--muted);font-size:12px">Carregando logs...</div>
+      <div id="diagLogLines"></div>
+    </div>
+    <div class="diag-footer">
+      <button class="btn-diag" onclick="copyDiagLogs()">Copiar logs</button>
+      <button class="btn-diag" id="diagOpenFolder" onclick="openDiagFolder()" style="display:none">Abrir pasta de logs</button>
+      <button class="btn-diag" onclick="closeDiagModal()">Fechar</button>
     </div>
   </div>
 </div>

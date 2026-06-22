@@ -204,7 +204,10 @@ async function connectPhone(sessionId, phoneId, io) {
       clientId: `${sessionId}_${phoneId}`,
       dataPath: path.join(config.sessionDir, sessionId, phoneId),
     }),
-    webVersionCache: { type: 'none' },
+    webVersionCache: {
+      type: 'remote',
+      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1041871181-alpha.html',
+    },
     puppeteer: {
       headless: true,
       executablePath,
@@ -212,10 +215,16 @@ async function connectPhone(sessionId, phoneId, io) {
       protocolTimeout: 120000,
       args: [
         '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
-        '--disable-gpu', '--disable-extensions', '--disable-background-networking',
-        '--disable-default-apps', '--disable-sync', '--disable-translate',
-        '--hide-scrollbars', '--no-first-run', '--window-size=1280,800',
+        '--disable-extensions', '--disable-default-apps', '--disable-sync',
+        '--disable-translate', '--hide-scrollbars', '--no-first-run',
+        '--window-size=1280,800',
         '--disable-blink-features=AutomationControlled',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-ipc-flooding-protection',
+        '--use-angle=swiftshader-webgl',
+        '--disable-features=CalculateNativeWinOcclusion,BackForwardCache',
       ],
     },
   });
@@ -268,17 +277,39 @@ async function connectPhone(sessionId, phoneId, io) {
   });
 
   phone.client.on('auth_failure', async () => {
+    clearPhoneWatchdog(sessionId, phoneId);
     phone.status = 'disconnected';
     try { await phone.client.destroy(); } catch {}
     phone.client = null;
-    emit(sessionId, io, 'phone_status', { phoneId, status: 'error', message: 'Falha na autenticação.' });
+    // Apaga dados de LocalAuth corrompidos/expirados para que a próxima tentativa gere QR novo
+    const authDir = path.join(config.sessionDir, sessionId, phoneId);
+    fs.rm(authDir, { recursive: true, force: true }, () => {});
+    emit(sessionId, io, 'phone_status', { phoneId, status: 'error', message: 'Sessão expirada. Clique em Conectar para escanear um novo QR.' });
     emitPhonesList(sessionId, io);
   });
 
   phone.status = 'connecting';
   emit(sessionId, io, 'phone_status', { phoneId, status: 'connecting', message: 'Iniciando...' });
   emitPhonesList(sessionId, io);
-  phone.client.initialize();
+  setPhoneWatchdog(sessionId, phoneId, io, 120000);
+  phone.client.initialize().catch(err => {
+    console.error(`[${sessionId}:${phoneId}] Falha ao inicializar cliente:`, err.message);
+    clearPhoneWatchdog(sessionId, phoneId);
+    try { phone.client.destroy(); } catch {}
+    phone.client = null;
+    phone.status = 'disconnected';
+    // Limpa LocalAuth corrompido para que próxima tentativa gere QR novo
+    const authDir = path.join(config.sessionDir, sessionId, phoneId);
+    fs.rm(authDir, { recursive: true, force: true }, () => {
+      console.log(`[${sessionId}:${phoneId}] LocalAuth limpo após falha de inicialização`);
+    });
+    const isContextError = err.message.includes('context') || err.message.includes('Target closed') || err.message.includes('detached');
+    const msg = isContextError
+      ? 'Sessão anterior inválida. Clique em Conectar para gerar um novo QR.'
+      : 'Falha ao abrir o navegador. Verifique se o Google Chrome está instalado.';
+    emit(sessionId, io, 'phone_status', { phoneId, status: 'error', message: msg });
+    emitPhonesList(sessionId, io);
+  });
 }
 
 async function disconnectPhone(sessionId, phoneId) {
