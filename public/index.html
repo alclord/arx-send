@@ -11,7 +11,7 @@
 <body>
 
 <!-- SVG sprite – aria-hidden, never rendered visually -->
-<svg aria-hidden="true" focusable="false" style="display:none" xmlns="http://www.w3.org/2000/svg">
+<svg id="svgSprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
   <symbol id="icon-smartphone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
     <rect x="5" y="2" width="14" height="20" rx="2"/>
     <line x1="12" y1="18" x2="12.01" y2="18"/>
@@ -78,12 +78,11 @@
     <div class="login-input-wrap">
       <label for="sessionInput" class="sr-only">Nome da sessão</label>
       <input type="text" id="sessionInput" placeholder="ex: yuri, equipe-vendas, suporte" maxlength="30"
-        autocomplete="username"
-        oninput="clearLoginError()" onkeydown="if(event.key==='Enter') enterSession()"/>
+        autocomplete="username"/>
     </div>
     <div class="login-hint">Letras, números, hífen e underline. Máx. 30 caracteres.</div>
     <div class="login-error" id="loginError" role="alert" aria-live="assertive"></div>
-    <button class="btn-login" onclick="enterSession()">Entrar na sessão →</button>
+    <button class="btn-login" id="loginBtn">Entrar na sessão →</button>
   </div>
 </div>
 
@@ -96,28 +95,28 @@
   </div>
   <div class="titlebar-drag"></div>
 
-  <!-- Update banner — inline for JS compat -->
+  <!-- Update banner -->
   <div id="updateBanner" role="status" aria-live="polite">
     <span class="update-text" id="updateText"></span>
-    <div class="update-prog-wrap" id="updateProgWrap" style="display:none" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Progresso da atualização">
+    <div class="update-prog-wrap" id="updateProgWrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Progresso da atualização">
       <div class="update-prog-bar" id="updateProgBar"></div>
     </div>
     <span id="updatePct"></span>
-    <button class="btn-update" id="updateBtn" onclick="installUpdate()" style="display:none">Reiniciar e instalar</button>
+    <button class="btn-update" id="updateBtn">Reiniciar e instalar</button>
   </div>
 
-  <!-- Hidden button kept for JS compat (checkForUpdates reads/writes it) -->
-  <button id="checkUpdateBtn" onclick="checkForUpdates()" style="display:none" aria-hidden="true" tabindex="-1">Verificar atualizações</button>
+  <!-- Hidden button for checkForUpdates flow -->
+  <button id="checkUpdateBtn" aria-hidden="true" tabindex="-1">Verificar atualizações</button>
 
-  <!-- Visible update icon button -->
+  <!-- Diagnostics button -->
   <div class="diag-wrap">
-    <button class="diag-btn" onclick="openDiagModal()" aria-label="Diagnóstico do sistema" title="Diagnóstico">
+    <button class="diag-btn" id="diagBtn" aria-label="Diagnóstico do sistema" title="Diagnóstico">
       <svg aria-hidden="true" focusable="false" width="15" height="15"><use href="#icon-terminal"/></svg>
     </button>
   </div>
 
   <div class="update-wrap" id="updateWrap">
-    <button class="update-btn" onclick="checkForUpdates()" aria-label="Verificar atualizações">
+    <button class="update-btn" id="updateCheckBtn" aria-label="Verificar atualizações">
       <svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
         <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
         <path d="M21 3v5h-5"/>
@@ -142,7 +141,7 @@
         <span class="sidebar-section-title">Sessão</span>
       </div>
       <div class="sidebar-session-row">
-        <button class="session-badge" id="sessionBadge" onclick="switchSession()" aria-label="Trocar sessão">—</button>
+        <button class="session-badge" id="sessionBadge" aria-label="Trocar sessão">—</button>
       </div>
     </div>
 
@@ -159,11 +158,10 @@
       <div class="phones-add-area">
         <label for="phoneNameInput" class="sr-only">Nome do telefone</label>
         <input type="text" id="phoneNameInput" placeholder="Novo telefone..." maxlength="50"
-          autocomplete="off"
-          onkeydown="if(event.key==='Enter') doAddPhone()"/>
-        <button class="btn-add-phone" id="btnAddPhone" onclick="doAddPhone()" aria-label="Adicionar telefone">＋</button>
+          autocomplete="off"/>
+        <button class="btn-add-phone" id="btnAddPhone" aria-label="Adicionar telefone">＋</button>
       </div>
-      <div class="phones-limit-note" id="phonesLimitNote" role="alert" style="display:none">
+      <div class="phones-limit-note" id="phonesLimitNote" role="alert">
         Limite de 10 telefones por sessão atingido.
       </div>
     </div>
@@ -174,9 +172,9 @@
   <div class="contacts-pane">
 
     <!-- Phone source bar -->
-    <div class="phone-source-bar" id="phoneSourceBar" style="display:none">
+    <div class="phone-source-bar" id="phoneSourceBar">
       <label for="phoneSourceSelect" class="phone-source-label">Ver contatos de:</label>
-      <select id="phoneSourceSelect" onchange="onPhoneSourceChange()"></select>
+      <select id="phoneSourceSelect"></select>
     </div>
 
     <!-- Panel header -->
@@ -187,16 +185,16 @@
       </div>
       <div class="sel-info">
         <span class="sel-badge" id="selBadge" aria-label="contatos selecionados">0</span>
-        <button class="icon-btn" onclick="selectAll()" aria-label="Selecionar todos os contatos">
+        <button class="icon-btn" id="selectAllBtn" aria-label="Selecionar todos os contatos">
           <svg aria-hidden="true" focusable="false" width="14" height="14"><use href="#icon-check"/></svg>
         </button>
-        <button class="icon-btn danger" onclick="deselectAll()" aria-label="Limpar seleção">
+        <button class="icon-btn danger" id="deselectAllBtn" aria-label="Limpar seleção">
           <svg aria-hidden="true" focusable="false" width="14" height="14"><use href="#icon-x"/></svg>
         </button>
-        <button class="icon-btn" onclick="openImportModal()" aria-label="Importar planilha">
+        <button class="icon-btn" id="openImportBtn" aria-label="Importar planilha">
           <svg aria-hidden="true" focusable="false" width="14" height="14"><use href="#icon-table"/></svg>
         </button>
-        <button class="icon-btn" onclick="reloadContacts()" aria-label="Recarregar contatos">
+        <button class="icon-btn" id="reloadContactsBtn" aria-label="Recarregar contatos">
           <svg aria-hidden="true" focusable="false" width="14" height="14"><use href="#icon-refresh"/></svg>
         </button>
       </div>
@@ -207,15 +205,15 @@
       <label for="searchInput" class="sr-only">Filtrar contatos e grupos</label>
       <div class="search-bar-inner">
         <svg aria-hidden="true" focusable="false" class="search-icon" width="14" height="14"><use href="#icon-search"/></svg>
-        <input type="text" id="searchInput" placeholder="Filtrar contatos e grupos..." oninput="_vsLimit=200;renderList()"/>
+        <input type="text" id="searchInput" placeholder="Filtrar contatos e grupos..."/>
       </div>
     </div>
 
     <!-- Filter tabs -->
     <div class="filter-tabs" role="tablist" aria-label="Filtrar contatos">
-      <button class="filter-tab active" role="tab" aria-selected="true"  aria-controls="contactsList" onclick="setFilter('all',this)">Todos</button>
-      <button class="filter-tab"        role="tab" aria-selected="false" aria-controls="contactsList" onclick="setFilter('people',this)">Contatos</button>
-      <button class="filter-tab"        role="tab" aria-selected="false" aria-controls="contactsList" onclick="setFilter('groups',this)">Grupos</button>
+      <button class="filter-tab active" role="tab" aria-selected="true"  aria-controls="contactsList" data-filter="all">Todos</button>
+      <button class="filter-tab"        role="tab" aria-selected="false" aria-controls="contactsList" data-filter="people">Contatos</button>
+      <button class="filter-tab"        role="tab" aria-selected="false" aria-controls="contactsList" data-filter="groups">Grupos</button>
     </div>
 
     <!-- Contacts list -->
@@ -238,15 +236,15 @@
       <div class="compose-section">
         <div class="field-label">O que enviar</div>
         <div class="mode-toggle" role="group" aria-label="Tipo de conteúdo">
-          <button class="mode-btn active" data-mode="text" onclick="setMode('text',this)">
+          <button class="mode-btn active" data-mode="text">
             <svg aria-hidden="true" focusable="false" width="13" height="13"><use href="#icon-message-square"/></svg>
             Só texto
           </button>
-          <button class="mode-btn" data-mode="file" onclick="setMode('file',this)">
+          <button class="mode-btn" data-mode="file">
             <svg aria-hidden="true" focusable="false" width="13" height="13"><use href="#icon-paperclip"/></svg>
             Só arquivo
           </button>
-          <button class="mode-btn" data-mode="both" onclick="setMode('both',this)">
+          <button class="mode-btn" data-mode="both">
             <svg aria-hidden="true" focusable="false" width="13" height="13"><use href="#icon-message-square"/></svg>
             Texto + arquivo
           </button>
@@ -257,19 +255,19 @@
       <div id="textSection" class="compose-section">
         <label for="msgText" class="field-label">Texto da mensagem</label>
         <div class="msg-wrap">
-          <textarea id="msgText" placeholder="Digite a mensagem..." oninput="updateSendBtn();updateMsgPreview()"></textarea>
+          <textarea id="msgText" placeholder="Digite a mensagem..."></textarea>
           <div class="msg-footer-bar">
             <span id="charCount">0 caracteres</span>
             <span>Shift+Enter = nova linha</span>
           </div>
         </div>
-        <div id="varsSection" style="display:none">
-          <div class="field-label" style="margin-top:10px">Variáveis disponíveis — clique para inserir</div>
+        <div id="varsSection">
+          <div class="field-label vars-field-label">Variáveis disponíveis — clique para inserir</div>
           <div class="vars-bar" id="varsBar"></div>
           <div class="preview-header">
             <div class="field-label">Preview</div>
             <label for="previewContactSelect" class="sr-only">Selecionar contato para preview</label>
-            <select class="preview-select" id="previewContactSelect" onchange="updateMsgPreview()">
+            <select class="preview-select" id="previewContactSelect">
               <option value="0">1º contato</option>
             </select>
           </div>
@@ -278,7 +276,7 @@
       </div>
 
       <!-- File section -->
-      <div id="fileSection" class="compose-section" style="display:none">
+      <div id="fileSection" class="compose-section">
         <div class="field-label">Arquivo anexo</div>
         <div class="file-preview" id="filePreview">
           <div class="file-thumb" id="fileThumb"></div>
@@ -286,7 +284,7 @@
             <div class="fname" id="fileName">—</div>
             <div class="fsize" id="fileSize">—</div>
           </div>
-          <button class="file-remove" onclick="removeFile()" aria-label="Remover arquivo">
+          <button class="file-remove" id="fileRemoveBtn" aria-label="Remover arquivo">
             <svg aria-hidden="true" focusable="false" width="16" height="16"><use href="#icon-x"/></svg>
           </button>
         </div>
@@ -314,7 +312,7 @@
       <!-- Phone selector -->
       <div class="compose-section send-phone-row">
         <label for="phoneSelectorSend" class="field-label">Enviar de</label>
-        <select id="phoneSelectorSend" onchange="onSendPhoneChange()">
+        <select id="phoneSelectorSend">
           <option value="">— Selecione um telefone conectado —</option>
         </select>
       </div>
@@ -333,8 +331,8 @@
       <!-- Warning -->
       <div class="compose-section">
         <div class="warning-box" role="alert">
-          <svg aria-hidden="true" focusable="false" width="14" height="14" style="flex-shrink:0;color:var(--yellow);margin-top:1px"><use href="#icon-triangle-alert"/></svg>
-          <span><strong style="color:var(--yellow)">Atenção:</strong> Disparos em massa podem resultar em banimento pelo WhatsApp. Use intervalos maiores e listas menores.</span>
+          <svg aria-hidden="true" focusable="false" class="warning-icon" width="14" height="14"><use href="#icon-triangle-alert"/></svg>
+          <span><strong class="text-yellow">Atenção:</strong> Disparos em massa podem resultar em banimento pelo WhatsApp. Use intervalos maiores e listas menores.</span>
         </div>
       </div>
 
@@ -342,7 +340,7 @@
 
     <!-- Send sticky -->
     <div class="send-sticky">
-      <button class="btn-primary" id="sendBtn" onclick="startSend()" disabled aria-label="Iniciar disparo">
+      <button class="btn-primary" id="sendBtn" disabled aria-label="Iniciar disparo">
         <svg aria-hidden="true" focusable="false" width="16" height="16"><use href="#icon-send"/></svg>
         <span class="btn-label">Iniciar Disparo</span>
         <span class="btn-spinner" aria-hidden="true"></span>
@@ -353,26 +351,26 @@
     <div class="progress-box" id="progressBox" role="region" aria-label="Progresso do disparo">
       <div class="progress-header">
         <span id="progLabel">Enviando...</span>
-        <span id="progCounter" style="font-family:'Geist Mono',monospace;font-weight:500"></span>
+        <span id="progCounter"></span>
       </div>
       <div class="progress-bar-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Progresso">
         <div class="progress-bar" id="progBar"></div>
       </div>
-      <div class="prog-timer-wrap" id="progTimerWrap" style="display:none" aria-live="polite">
+      <div class="prog-timer-wrap" id="progTimerWrap" aria-live="polite">
         <svg aria-hidden="true" focusable="false" width="13" height="13"><use href="#icon-clock"/></svg>
         <span class="prog-timer-label">Próxima em</span>
         <span class="prog-timer" id="progTimer">0:00</span>
       </div>
       <div class="progress-log" id="progLog" aria-live="polite" aria-label="Log de envio"></div>
-      <div class="progress-actions" id="progressActions" style="display:none">
-        <button class="btn-retry" id="retryBtn" onclick="startSend()">&#8635; Tentar novamente</button>
+      <div class="progress-actions" id="progressActions">
+        <button class="btn-retry" id="retryBtn">&#8635; Tentar novamente</button>
       </div>
       <div class="progress-footer">
-        <button class="btn-stop" id="stopBtn" onclick="stopSend()" style="display:none" aria-label="Parar disparo">
+        <button class="btn-stop" id="stopBtn" aria-label="Parar disparo">
           <svg aria-hidden="true" focusable="false" width="15" height="15"><use href="#icon-stop"/></svg>
           Parar disparo
         </button>
-        <button class="btn-close-progress" id="closeProgressBtn" onclick="closeProgressView()" style="display:none">
+        <button class="btn-close-progress" id="closeProgressBtn">
           Fechar
         </button>
       </div>
@@ -385,11 +383,11 @@
 <!-- IMPORT MODAL -->
 <div id="importModal" role="dialog" aria-modal="true" aria-labelledby="importModalTitle">
   <div class="import-card">
-    <button class="qr-close" onclick="closeImportModal()" aria-label="Fechar importação">
+    <button class="qr-close" id="closeImportBtn" aria-label="Fechar importação">
       <svg aria-hidden="true" focusable="false" width="16" height="16"><use href="#icon-x"/></svg>
     </button>
     <h2 id="importModalTitle">
-      <svg aria-hidden="true" focusable="false" width="16" height="16" style="vertical-align:middle;margin-right:6px"><use href="#icon-table"/></svg>
+      <svg aria-hidden="true" focusable="false" class="icon-inline" width="16" height="16"><use href="#icon-table"/></svg>
       Importar Planilha
     </h2>
     <p class="import-sub">Importe contatos de um arquivo Excel ou CSV</p>
@@ -400,30 +398,30 @@
         <svg aria-hidden="true" focusable="false" class="import-zone-icon" width="32" height="32"><use href="#icon-folder"/></svg>
         <p><strong>Clique ou arraste</strong> um arquivo aqui<br>.xlsx, .xls ou .csv</p>
       </div>
-      <div id="importFileError" role="alert" aria-live="assertive" style="font-size:12px;color:var(--red);margin-top:8px;min-height:16px"></div>
+      <div id="importFileError" role="alert" aria-live="assertive"></div>
     </div>
     <div class="import-step" id="importStep2">
       <div class="import-col-row">
         <div>
-          <label for="importPhoneCol" class="field-label" style="margin-bottom:6px">Coluna dos telefones *</label>
+          <label for="importPhoneCol" class="field-label import-col-label">Coluna dos telefones *</label>
           <select class="import-select" id="importPhoneCol"></select>
         </div>
         <div>
-          <label for="importNameCol" class="field-label" style="margin-bottom:6px">Coluna dos nomes (opcional)</label>
+          <label for="importNameCol" class="field-label import-col-label">Coluna dos nomes (opcional)</label>
           <select class="import-select" id="importNameCol"><option value="">— nenhuma —</option></select>
         </div>
       </div>
       <div class="import-preview" id="importPreview"></div>
       <div class="import-actions">
-        <button class="btn-import-back" onclick="backImportStep()">← Voltar</button>
-        <button class="btn-import-ok" id="importOkBtn" onclick="confirmImport()">Importar contatos</button>
+        <button class="btn-import-back" id="importBackBtn">← Voltar</button>
+        <button class="btn-import-ok" id="importOkBtn">Importar contatos</button>
       </div>
     </div>
   </div>
 </div>
 
 <!-- PHONES MODAL — hidden stub for trapFocus/ESC handler compat -->
-<div id="phonesModal" role="dialog" aria-modal="true" aria-labelledby="phonesModalTitle" style="display:none">
+<div id="phonesModal" role="dialog" aria-modal="true" aria-labelledby="phonesModalTitle">
   <div class="phones-card">
     <h2 id="phonesModalTitle" class="sr-only">Telefones</h2>
   </div>
@@ -432,7 +430,7 @@
 <!-- QR MODAL -->
 <div id="qrModal" role="dialog" aria-modal="true" aria-labelledby="qrModalTitle">
   <div class="qr-card">
-    <button class="qr-close" onclick="closeQrModal()" aria-label="Fechar QR Code">
+    <button class="qr-close" id="closeQrBtn" aria-label="Fechar QR Code">
       <svg aria-hidden="true" focusable="false" width="16" height="16"><use href="#icon-x"/></svg>
     </button>
     <h2 id="qrModalTitle">Conectar WhatsApp</h2>
@@ -442,11 +440,11 @@
     </div>
     <div id="qrError" role="alert">
       <span id="qrErrorMsg">Falha na conexão.</span>
-      <button class="btn-primary" style="padding:8px 20px;font-size:13px" onclick="retryCurrentPhone()">Tentar novamente</button>
+      <button class="btn-primary" id="retryPhoneBtn">Tentar novamente</button>
     </div>
-    <p id="qrInstructions" style="display:none">Escaneie o QR code abaixo com seu celular</p>
-    <img id="qrImage" src="" alt="QR Code para conectar WhatsApp" style="display:none"/>
-    <div class="qr-steps" id="qrSteps" style="display:none">
+    <p id="qrInstructions">Escaneie o QR code abaixo com seu celular</p>
+    <img id="qrImage" src="" alt="QR Code para conectar WhatsApp"/>
+    <div class="qr-steps" id="qrSteps">
       <span>1.</span> Abra o WhatsApp no celular<br>
       <span>2.</span> Toque em ⋮ Menu → Dispositivos conectados<br>
       <span>3.</span> Toque em "Conectar um dispositivo"<br>
@@ -458,19 +456,19 @@
 <!-- DIAGNOSTICS MODAL -->
 <div id="diagModal" role="dialog" aria-modal="true" aria-labelledby="diagModalTitle">
   <div class="diag-card">
-    <button class="qr-close" onclick="closeDiagModal()" aria-label="Fechar diagnóstico">
+    <button class="qr-close" id="closeDiagBtn" aria-label="Fechar diagnóstico">
       <svg aria-hidden="true" focusable="false" width="16" height="16"><use href="#icon-x"/></svg>
     </button>
     <h2 id="diagModalTitle">Diagnóstico do sistema</h2>
     <p class="diag-file" id="diagFile"></p>
     <div class="diag-log-wrap" id="diagLogWrap">
-      <div id="diagLoading" style="color:var(--muted);font-size:12px">Carregando logs...</div>
+      <div id="diagLoading">Carregando logs...</div>
       <div id="diagLogLines"></div>
     </div>
     <div class="diag-footer">
-      <button class="btn-diag" onclick="copyDiagLogs()">Copiar logs</button>
-      <button class="btn-diag" id="diagOpenFolder" onclick="openDiagFolder()" style="display:none">Abrir pasta de logs</button>
-      <button class="btn-diag" onclick="closeDiagModal()">Fechar</button>
+      <button class="btn-diag" id="copyDiagLogsBtn">Copiar logs</button>
+      <button class="btn-diag" id="diagOpenFolder">Abrir pasta de logs</button>
+      <button class="btn-diag" id="closeDiagModalBtn">Fechar</button>
     </div>
   </div>
 </div>

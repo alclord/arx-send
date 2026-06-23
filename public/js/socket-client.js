@@ -96,9 +96,9 @@ socket.on('phone_qr', ({ phoneId, phoneName, qr }) => {
   document.getElementById('qrLoading').classList.remove('show');
   document.getElementById('qrError').classList.remove('show');
   document.getElementById('qrImage').src = qr;
-  document.getElementById('qrImage').style.display = '';
-  document.getElementById('qrInstructions').style.display = '';
-  document.getElementById('qrSteps').style.display = '';
+  document.getElementById('qrImage').style.display = 'block';
+  document.getElementById('qrInstructions').style.display = 'block';
+  document.getElementById('qrSteps').style.display = 'block';
   document.getElementById('qrModal').classList.add('show');
 });
 

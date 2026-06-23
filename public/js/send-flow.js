@@ -28,7 +28,7 @@ function _startSendTimer(delayMs) {
   const timerWrap = document.getElementById('progTimerWrap');
   if (!timerEl || !timerWrap) return;
   const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-  timerWrap.style.display = '';
+  timerWrap.style.display = 'flex';
   setText(timerEl, fmt(remaining));
   _timerInterval = setInterval(() => {
     remaining--;
@@ -52,7 +52,7 @@ function onSendStart({ total }) {
   setText(document.getElementById('progLabel'), 'Iniciando...');
   setText(document.getElementById('progCounter'), `0 / ${total}`);
   document.getElementById('sendBtn').style.display = 'none';
-  document.getElementById('stopBtn').style.display = '';
+  document.getElementById('stopBtn').style.display = 'flex';
 }
 
 function onSendProgressEvent({ index, total, name, status, error }) {
@@ -91,7 +91,7 @@ function onSendDone() {
   document.getElementById('progressBox').classList.add('done');
   document.getElementById('stopBtn').style.display = 'none';
   const closeBtn = document.getElementById('closeProgressBtn');
-  if (closeBtn) closeBtn.style.display = '';
+  if (closeBtn) closeBtn.style.display = 'block';
   updateSendBtn();
   if (window.electronAPI?.showNotification) {
     window.electronAPI.showNotification({ title: 'ARX Send', body: 'Disparo concluído!' });
@@ -107,7 +107,7 @@ function onSendStopped() {
   setText(document.getElementById('progLabel'), 'Parado');
   document.getElementById('stopBtn').style.display = 'none';
   const closeBtn = document.getElementById('closeProgressBtn');
-  if (closeBtn) closeBtn.style.display = '';
+  if (closeBtn) closeBtn.style.display = 'block';
   updateSendBtn();
 }
 
@@ -146,14 +146,14 @@ async function startSend() {
       sendBtn.style.display = '';
       setText(document.getElementById('progLabel'), '❌ ' + (data.error || 'Erro ao iniciar disparo'));
       document.getElementById('progressBox').classList.add('show');
-      document.getElementById('progressActions').style.display = '';
+      document.getElementById('progressActions').style.display = 'flex';
     }
   } catch (e) {
     sendBtn.classList.remove('loading');
     sendBtn.style.display = '';
     setText(document.getElementById('progLabel'), '❌ Erro de comunicação: ' + e.message);
     document.getElementById('progressBox').classList.add('show');
-    document.getElementById('progressActions').style.display = '';
+    document.getElementById('progressActions').style.display = 'flex';
   }
 }
 

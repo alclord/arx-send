@@ -34,7 +34,7 @@ if (window.electronAPI?.onUpdateStatus) {
         setHTML(text, `Nova versão <strong>${esc(version)}</strong> disponível`);
         setText(btn, 'Baixar e reiniciar');
       }
-      btn.style.display = '';
+      btn.style.display = 'inline-block';
       btn.disabled = false;
       progWrap.style.display = 'none';
       setText(pctEl, '');
@@ -44,7 +44,7 @@ if (window.electronAPI?.onUpdateStatus) {
     } else if (status === 'downloading') {
       checkBtn.style.display = 'none';
       setText(text, type === 'asar' ? 'Baixando atualização leve...' : 'Baixando instalador (Electron atualizado)...');
-      progWrap.style.display = '';
+      progWrap.style.display = 'block';
       progBar.style.width = progress + '%';
       setText(pctEl, progress + '%');
       btn.style.display = 'none';
@@ -63,7 +63,7 @@ if (window.electronAPI?.onUpdateStatus) {
       progWrap.style.display = 'none';
       setText(pctEl, '');
       btn.style.display = 'none';
-      checkBtn.style.display = '';
+      checkBtn.style.display = 'inline-block';
       checkBtn.disabled = false;
       setText(checkBtn, 'Verificar atualizações');
     }
@@ -95,7 +95,7 @@ function onUpdateStatusEvent({ status, version, progress }) {
   } else if (status === 'downloading') {
     banner.classList.add('show');
     setHTML(text, `Baixando atualização <strong>${esc(version)}</strong>...`);
-    progWrap.style.display = '';
+    progWrap.style.display = 'block';
     progBar.style.width = progress + '%';
     setText(pctEl, progress + '%');
     btn.style.display = 'none';
@@ -104,7 +104,7 @@ function onUpdateStatusEvent({ status, version, progress }) {
     setHTML(text, `✅ Atualização <strong>${esc(version)}</strong> pronta para instalar`);
     progWrap.style.display = 'none';
     setText(pctEl, '');
-    btn.style.display = '';
+    btn.style.display = 'inline-block';
     btn.disabled = false;
     setText(btn, 'Reiniciar e instalar');
   } else {
@@ -162,7 +162,7 @@ async function checkForUpdates() {
         ? `Nova versão <strong>${esc(result.version)}</strong> disponível (Electron atualizado — instalador completo)`
         : `Nova versão <strong>${esc(result.version)}</strong> disponível (atualização leve)`
       );
-      updateBtn.style.display = '';
+      updateBtn.style.display = 'inline-block';
       setText(updateBtn, result.electronChanged ? 'Baixar instalador' : 'Baixar e reiniciar');
     } else {
       setText(text, 'Você já está na versão mais recente.');
@@ -180,7 +180,7 @@ async function checkForUpdates() {
     setText(btn, 'Verificar atualizações');
     if (data.updateAvailable) {
       setHTML(text, `Nova versão <strong>${esc(data.latestVersion)}</strong> disponível`);
-      updateBtn.style.display = '';
+      updateBtn.style.display = 'inline-block';
     } else {
       setText(text, 'Você já está na versão mais recente.');
       setTimeout(() => banner?.classList.remove('show'), 3000);

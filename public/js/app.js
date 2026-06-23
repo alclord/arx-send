@@ -84,7 +84,7 @@ function renderPhonesList() {
   const limitNote = document.getElementById('phonesLimitNote');
   if (state.phones.length >= 10) {
     btnAdd.disabled = true;
-    limitNote.style.display = '';
+    limitNote.style.display = 'block';
   } else {
     btnAdd.disabled = false;
     limitNote.style.display = 'none';
@@ -240,7 +240,7 @@ function updatePhoneSourceSelect() {
     return;
   }
 
-  bar.style.display = '';
+  bar.style.display = 'flex';
   const prev = sel.value;
   sel.innerHTML = readyPhones
     .map(p => `<option value="${esc(p.id)}">${esc(p.name)} (${p.contactCount || 0})</option>`)
@@ -314,13 +314,18 @@ function renderList() {
   if (!state.contacts.length && !state.importedContacts.length) {
     const hasReady = state.phones.some(p => p.status === 'ready');
     const iconId = hasReady ? 'icon-message-square' : 'icon-smartphone';
-    const msg = hasReady
-      ? 'Nenhum contato carregado'
-      : 'Adicione e conecte um telefone<br>para ver seus contatos';
-    const cta = hasReady
-      ? `<button class="load-more-btn" onclick="reloadContacts()">Recarregar contatos</button>`
-      : '';
-    setHTML(list, `<div class="empty-state"><svg aria-hidden="true" focusable="false" class="empty-icon" width="36" height="36"><use href="#${iconId}"/></svg><p>${msg}</p>${cta}</div>`);
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    setHTML(empty, `<svg aria-hidden="true" focusable="false" class="empty-icon" width="36" height="36"><use href="#${iconId}"/></svg><p>${hasReady ? 'Nenhum contato carregado' : 'Adicione e conecte um telefone<br>para ver seus contatos'}</p>`);
+    if (hasReady) {
+      const btn = document.createElement('button');
+      btn.className = 'load-more-btn';
+      btn.textContent = 'Recarregar contatos';
+      btn.addEventListener('click', reloadContacts);
+      empty.appendChild(btn);
+    }
+    list.innerHTML = '';
+    list.appendChild(empty);
     return;
   }
 
@@ -344,7 +349,7 @@ function renderList() {
     const sel = state.selectedIds.has(c.id);
     const div = document.createElement('div');
     div.className = 'contact-item' + (sel ? ' selected' : '');
-    div.setAttribute('onclick', `toggleContact('${esc(c.id)}')`);
+    div.addEventListener('click', () => toggleContact(c.id));
 
     const cb = document.createElement('div');
     cb.className = 'cb';
@@ -435,8 +440,8 @@ function setMode(mode, btn) {
   state.sendMode = mode;
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  document.getElementById('textSection').style.display = mode === 'file' ? 'none' : '';
-  document.getElementById('fileSection').style.display = mode === 'text' ? 'none' : '';
+  document.getElementById('textSection').style.display = mode === 'file' ? 'none' : 'flex';
+  document.getElementById('fileSection').style.display = mode === 'text' ? 'none' : 'flex';
   updateSendBtn();
 }
 
@@ -588,13 +593,13 @@ function updateVarsBar() {
   const section = document.getElementById('varsSection');
   const bar = document.getElementById('varsBar');
   if (!state.sheetHeaders.length) { section.style.display = 'none'; return; }
-  section.style.display = '';
+  section.style.display = 'block';
   bar.innerHTML = '';
   state.sheetHeaders.forEach(h => {
     const btn = document.createElement('button');
     btn.className = 'var-btn';
     btn.textContent = h;
-    btn.setAttribute('onclick', `insertVar('${esc(h)}')`);
+    btn.addEventListener('click', () => insertVar(h));
     bar.appendChild(btn);
   });
 
@@ -821,10 +826,10 @@ let _diagLines = [];
 
 async function openDiagModal() {
   document.getElementById('diagModal').classList.add('show');
-  document.getElementById('diagLoading').style.display = '';
+  document.getElementById('diagLoading').style.display = 'block';
   document.getElementById('diagLogLines').innerHTML = '';
   document.getElementById('diagFile').textContent = '';
-  if (isElectron) document.getElementById('diagOpenFolder').style.display = '';
+  if (isElectron) document.getElementById('diagOpenFolder').style.display = 'inline-block';
 
   try {
     const headers = {};
@@ -901,3 +906,55 @@ function trapFocus(modal) {
 }
 
 ['importModal', 'phonesModal', 'qrModal', 'diagModal'].forEach(id => trapFocus(document.getElementById(id)));
+
+// ── Event listeners (replaces all inline onclick/oninput/onchange in HTML) ──
+
+document.getElementById('sessionInput').addEventListener('input', clearLoginError);
+document.getElementById('sessionInput').addEventListener('keydown', e => { if (e.key === 'Enter') enterSession(); });
+document.getElementById('loginBtn').addEventListener('click', enterSession);
+
+document.getElementById('updateBtn').addEventListener('click', installUpdate);
+document.getElementById('checkUpdateBtn').addEventListener('click', checkForUpdates);
+document.getElementById('diagBtn').addEventListener('click', openDiagModal);
+document.getElementById('updateCheckBtn').addEventListener('click', checkForUpdates);
+document.getElementById('sessionBadge').addEventListener('click', switchSession);
+
+document.getElementById('phoneNameInput').addEventListener('keydown', e => { if (e.key === 'Enter') doAddPhone(); });
+document.getElementById('btnAddPhone').addEventListener('click', doAddPhone);
+document.getElementById('phoneSourceSelect').addEventListener('change', onPhoneSourceChange);
+
+document.getElementById('selectAllBtn').addEventListener('click', selectAll);
+document.getElementById('deselectAllBtn').addEventListener('click', deselectAll);
+document.getElementById('openImportBtn').addEventListener('click', openImportModal);
+document.getElementById('reloadContactsBtn').addEventListener('click', reloadContacts);
+
+document.getElementById('searchInput').addEventListener('input', () => { state.vsLimit = 200; renderList(); });
+
+document.querySelectorAll('.filter-tab').forEach(btn => {
+  btn.addEventListener('click', () => setFilter(btn.dataset.filter, btn));
+});
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => setMode(btn.dataset.mode, btn));
+});
+
+document.getElementById('msgText').addEventListener('input', () => { updateSendBtn(); updateMsgPreview(); });
+document.getElementById('previewContactSelect').addEventListener('change', updateMsgPreview);
+document.getElementById('fileRemoveBtn').addEventListener('click', removeFile);
+document.getElementById('phoneSelectorSend').addEventListener('change', onSendPhoneChange);
+
+document.getElementById('sendBtn').addEventListener('click', startSend);
+document.getElementById('retryBtn').addEventListener('click', startSend);
+document.getElementById('stopBtn').addEventListener('click', stopSend);
+document.getElementById('closeProgressBtn').addEventListener('click', closeProgressView);
+
+document.getElementById('closeImportBtn').addEventListener('click', closeImportModal);
+document.getElementById('importBackBtn').addEventListener('click', backImportStep);
+document.getElementById('importOkBtn').addEventListener('click', confirmImport);
+
+document.getElementById('closeQrBtn').addEventListener('click', closeQrModal);
+document.getElementById('retryPhoneBtn').addEventListener('click', retryCurrentPhone);
+
+document.getElementById('closeDiagBtn').addEventListener('click', closeDiagModal);
+document.getElementById('copyDiagLogsBtn').addEventListener('click', copyDiagLogs);
+document.getElementById('diagOpenFolder').addEventListener('click', openDiagFolder);
+document.getElementById('closeDiagModalBtn').addEventListener('click', closeDiagModal);
