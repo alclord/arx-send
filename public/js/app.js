@@ -114,13 +114,15 @@ function renderPhonesList() {
     const name = document.createElement('div');
     name.className = 'phone-row-name';
     name.textContent = phone.name;
+    name.title = phone.name;
 
     const status = document.createElement('div');
     status.className = 'phone-row-status';
-    status.textContent =
-      isReady && phone.contactCount > 0
-        ? `${statusLabel} · ${phone.contactCount} conversas`
-        : statusLabel;
+    const statusFull = isReady && phone.contactCount > 0
+      ? `${statusLabel} · ${phone.contactCount} conversas`
+      : statusLabel;
+    status.textContent = statusFull;
+    status.title = statusFull;
 
     info.appendChild(name);
     info.appendChild(status);
@@ -364,6 +366,7 @@ function renderList() {
     const nameDiv = document.createElement('div');
     nameDiv.className = 'contact-name';
     nameDiv.textContent = c.name;
+    nameDiv.title = c.name;
     info.appendChild(nameDiv);
 
     if (c.unread) {
@@ -374,7 +377,9 @@ function renderList() {
     } else if (c.imported) {
       const sub = document.createElement('div');
       sub.className = 'contact-sub';
-      sub.textContent = c.id.replace('@c.us', '');
+      const subText = c.id.replace('@c.us', '');
+      sub.textContent = subText;
+      sub.title = subText;
       info.appendChild(sub);
     }
 
@@ -514,7 +519,9 @@ async function handleFile(file) {
   const data = await res.json();
   if (!data.ok) { alert('Erro ao enviar arquivo: ' + data.error); return; }
   state.uploadedFile = data;
-  setText(document.getElementById('fileName'), data.original);
+  const fileNameEl = document.getElementById('fileName');
+  setText(fileNameEl, data.original);
+  fileNameEl.title = data.original;
   setText(document.getElementById('fileSize'), formatBytes(data.size));
   const thumb = document.getElementById('fileThumb');
   thumb.innerHTML = '';
@@ -534,6 +541,7 @@ async function handleFile(file) {
 function removeFile() {
   state.uploadedFile = null;
   fileInput.value = '';
+  document.getElementById('fileName').title = '';
   document.getElementById('filePreview').classList.remove('show');
   document.getElementById('fileZone').style.display = '';
   updateSendBtn();
@@ -550,9 +558,15 @@ function updateSummary() {
   const phone = state.phones.find(p => p.id === sendPhoneId);
   setText(document.getElementById('sumContacts'), state.selectedIds.size);
   setText(document.getElementById('sumDelay'), getDelayLabel());
-  setText(document.getElementById('sumMsg'), state.sendMode === 'file' ? '(sem texto)' : (document.getElementById('msgText').value.trim() || '—'));
-  setText(document.getElementById('sumFile'), state.uploadedFile ? state.uploadedFile.original : '—');
-  setText(document.getElementById('sumPhone'), phone ? phone.name : '—');
+  const sumMsgVal = state.sendMode === 'file' ? '(sem texto)' : (document.getElementById('msgText').value.trim() || '—');
+  const sumFileVal = state.uploadedFile ? state.uploadedFile.original : '—';
+  const sumPhoneVal = phone ? phone.name : '—';
+  const sumMsgEl = document.getElementById('sumMsg');
+  const sumFileEl = document.getElementById('sumFile');
+  const sumPhoneEl = document.getElementById('sumPhone');
+  setText(sumMsgEl, sumMsgVal);   sumMsgEl.title = sumMsgVal;
+  setText(sumFileEl, sumFileVal); sumFileEl.title = sumFileVal;
+  setText(sumPhoneEl, sumPhoneVal); sumPhoneEl.title = sumPhoneVal;
 }
 
 function updateSendBtn() {
