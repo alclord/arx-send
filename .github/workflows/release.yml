@@ -8,6 +8,8 @@ on:
 jobs:
   build-and-release:
     runs-on: windows-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -67,6 +69,5 @@ jobs:
             dist/ARX-Send-Setup-${{ steps.version.outputs.VERSION }}.exe
             dist/app.asar
             dist/release.json
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
