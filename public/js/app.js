@@ -1,7 +1,20 @@
-const socket = io();
-const isElectron = !!(window.electronAPI && window.electronAPI.isElectron);
 
-let pendingUpdateInfo = null;
+/**
+ * @fileoverview app.js — bootstrap e funções de UI não cobertas por módulos específicos.
+ *
+ * Carregado por último no HTML. Dependências (na ordem dos <script> tags):
+ *   1. state.js        — estado global
+ *   2. send-flow.js    — progresso e timer de envio
+ *   3. updater-ui.js   — banner de atualização
+ *   4. socket-client.js — Socket.io e API helper
+ *   5. app.js          — este arquivo (bootstrap + UI residual)
+ *
+ * Contém: utilitários de HTML, telefones, QR modal, contatos, planilha,
+ * modo de envio, diagnóstico, toast, focus trap.
+ */
+
+// ── Detecção de ambiente ──────────────────────────────────────────────────
+const isElectron = !!(window.electronAPI && window.electronAPI.isElectron);
 
 if (isElectron && window.electronAPI.getAppVersion) {
   window.electronAPI.getAppVersion().then(v => {
@@ -10,432 +23,26 @@ if (isElectron && window.electronAPI.getAppVersion) {
   });
 }
 
+if (isElectron && window.electronAPI.getAuthToken) {
+  window.electronAPI.getAuthToken().then(t => { state.authToken = t; });
+}
+
+// ── Utilitários de HTML ───────────────────────────────────────────────────
+
 function esc(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function setText(el, text) { el.textContent = text; }
 function setHTML(el, html) { el.innerHTML = html; }
 
-if (isElectron && window.electronAPI.onUpdateStatus) {
-  window.electronAPI.onUpdateStatus(({ status, progress, message, type, version, electronChanged }) => {
-    const text = document.getElementById('updateText');
-    const progWrap = document.getElementById('updateProgWrap');
-    const progBar = document.getElementById('updateProgBar');
-    const pctEl = document.getElementById('updatePct');
-    const btn = document.getElementById('updateBtn');
-    const checkBtn = document.getElementById('checkUpdateBtn');
-    const banner = document.getElementById('updateBanner');
-    const dot = document.getElementById('updateDot');
-    const wrap = document.getElementById('updateWrap');
-    banner?.classList.add('show');
+// ── Resumo do header ──────────────────────────────────────────────────────
 
-    if (status === 'available') {
-      pendingUpdateInfo = { updateAvailable: true, version, electronChanged };
-      if (electronChanged) {
-        setHTML(text, `Nova versão <strong>${esc(version)}</strong> disponível (requer instalador completo)`);
-        setText(btn, 'Baixar instalador');
-      } else {
-        setHTML(text, `Nova versão <strong>${esc(version)}</strong> disponível`);
-        setText(btn, 'Baixar e reiniciar');
-      }
-      btn.style.display = '';
-      btn.disabled = false;
-      progWrap.style.display = 'none';
-      setText(pctEl, '');
-      checkBtn.style.display = 'none';
-      if (dot) dot.style.display = 'block';
-      if (wrap) wrap.classList.add('available');
-    } else if (status === 'downloading') {
-      checkBtn.style.display = 'none';
-      setText(text, type === 'asar'
-        ? 'Baixando atualização leve...'
-        : 'Baixando instalador (Electron atualizado)...');
-      progWrap.style.display = '';
-      progBar.style.width = progress + '%';
-      setText(pctEl, progress + '%');
-      btn.style.display = 'none';
-    } else if (status === 'installing') {
-      setText(text, message || 'Instalando...');
-      progWrap.style.display = 'none';
-      setText(pctEl, '');
-    } else if (status === 'ready') {
-      setText(text, message || 'Atualização pronta!');
-      progWrap.style.display = 'none';
-      setText(pctEl, '');
-      btn.style.display = 'none';
-      checkBtn.style.display = 'none';
-    } else if (status === 'error') {
-      setText(text, message || 'Erro ao buscar atualização.');
-      progWrap.style.display = 'none';
-      setText(pctEl, '');
-      btn.style.display = 'none';
-      checkBtn.style.display = '';
-      checkBtn.disabled = false;
-      setText(checkBtn, 'Verificar atualizações');
-    }
-  });
-}
-
-// ── Sessão ──
-let sessionId = null;
-
-function enterSession() {
-  const raw = document.getElementById('sessionInput').value.trim();
-  const id = raw.toLowerCase().replace(/[^a-z0-9_-]/g, '');
-  if (!id || id.length < 2) {
-    setText(document.getElementById('loginError'), 'Nome deve ter ao menos 2 caracteres válidos.');
-    return;
-  }
-  sessionId = id;
-  localStorage.setItem('wa_session', id);
-  document.getElementById('loginScreen').classList.add('hidden');
-  setText(document.getElementById('sessionBadge'), '# ' + id);
-  socket.emit('join_session', id);
-}
-
-function clearLoginError() {
-  setText(document.getElementById('loginError'), '');
-}
-
-function switchSession() {
-  if (!confirm('Trocar de sessão? Você sairá da sessão atual.')) return;
-  localStorage.removeItem('wa_session');
-  location.reload();
-}
-
-const saved = localStorage.getItem('wa_session');
-if (saved) {
-  document.getElementById('sessionInput').value = saved;
-  socket.on('connect', () => { if (!sessionId) enterSession(); });
-} else {
-  document.getElementById('loginScreen').classList.remove('hidden');
-}
-
-socket.on('session_joined', ({ sessionId: id }) => {
-  sessionId = id;
-  setText(document.getElementById('sessionBadge'), '# ' + id);
-  document.getElementById('loginScreen').classList.add('hidden');
-});
-
-// ── Estado de telefones ──
-let phones = [];                  // lista de { id, name, status, contactCount }
-let phoneContacts = {};           // phoneId → contacts[]
-let phoneStatuses = {};           // phoneId → { status, message }
-let selectedPhoneId = null;       // telefone selecionado para ver contatos
-let currentQrPhoneId = null;      // telefone cujo QR está sendo exibido
-
-// ── Estado geral ──
-let contacts = [];
-let importedContacts = [];
-let _vsLimit = 200;
-let sheetHeaders = [];
-let selectedIds = new Set();
-let currentFilter = 'all';
-let sendMode = 'text';
-let selectedDelay = 3000;
-let uploadedFile = null;
-let isSending = false;
-let _sendDelayMs = 0;
-let _timerInterval = null;
-let importFilename = null;
-
-// ── Eventos socket de telefones ──
-
-socket.on('phones_list', ({ phones: p }) => {
-  phones = p;
-  renderPhonesList();
-  updatePhoneSourceSelect();
-  updatePhoneSelectorSend();
-  updateHeaderSummary();
-  updateSendBtn();
-});
-
-socket.on('phone_status', ({ phoneId, status, message }) => {
-  phoneStatuses[phoneId] = { status, message };
-  const phone = phones.find(ph => ph.id === phoneId);
-  if (phone) phone.status = status;
-  renderPhonesList();
-  updatePhoneSourceSelect();
-  updatePhoneSelectorSend();
-  updateHeaderSummary();
-  updateSendBtn();
-
-  if (currentQrPhoneId === phoneId) {
-    if (status === 'ready' || status === 'connecting') {
-      closeQrModal();
-    }
-    if (status === 'error') {
-      document.getElementById('qrLoading').classList.remove('show');
-      document.getElementById('qrImage').style.display = 'none';
-      document.getElementById('qrInstructions').style.display = 'none';
-      document.getElementById('qrSteps').style.display = 'none';
-      setText(document.getElementById('qrErrorMsg'), message || 'Falha na conexão.');
-      document.getElementById('qrError').classList.add('show');
-      document.getElementById('qrModal').classList.add('show');
-    }
-  }
-});
-
-socket.on('phone_qr', ({ phoneId, phoneName, qr }) => {
-  currentQrPhoneId = phoneId;
-  setText(document.getElementById('qrModalTitle'), `Conectar — ${phoneName}`);
-  document.getElementById('qrLoading').classList.remove('show');
-  document.getElementById('qrError').classList.remove('show');
-  document.getElementById('qrImage').src = qr;
-  document.getElementById('qrImage').style.display = '';
-  document.getElementById('qrInstructions').style.display = '';
-  document.getElementById('qrSteps').style.display = '';
-  document.getElementById('qrModal').classList.add('show');
-});
-
-socket.on('phone_contacts', ({ phoneId, contacts: c }) => {
-  phoneContacts[phoneId] = c;
-  const phone = phones.find(ph => ph.id === phoneId);
-  if (phone) phone.contactCount = c.length;
-  if (phoneId === selectedPhoneId) {
-    contacts = c;
-    for (const id of selectedIds) {
-      if (!contacts.find(x => x.id === id) && !importedContacts.find(x => x.id === id)) selectedIds.delete(id);
-    }
-    renderList();
-    updateSendBtn();
-  }
-  renderPhonesList();
-});
-
-function _clearSendTimer() {
-  if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
-  const w = document.getElementById('progTimerWrap');
-  if (w) w.style.display = 'none';
-}
-
-function _startSendTimer(delayMs) {
-  _clearSendTimer();
-  if (delayMs <= 30000) return;
-  let remaining = Math.ceil(delayMs / 1000);
-  const timerEl = document.getElementById('progTimer');
-  const timerWrap = document.getElementById('progTimerWrap');
-  if (!timerEl || !timerWrap) return;
-  const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-  timerWrap.style.display = '';
-  setText(timerEl, fmt(remaining));
-  _timerInterval = setInterval(() => {
-    remaining--;
-    if (remaining <= 0) { _clearSendTimer(); return; }
-    setText(timerEl, fmt(remaining));
-  }, 1000);
-}
-
-socket.on('send_start', ({ total }) => {
-  isSending = true;
-  _clearSendTimer();
-  const progressBox = document.getElementById('progressBox');
-  progressBox.classList.add('show');
-  progressBox.classList.remove('done');
-  document.getElementById('progressActions').style.display = 'none';
-  document.getElementById('sendBtn').classList.remove('loading');
-  setText(document.getElementById('progLog'), '');
-  document.getElementById('progBar').style.width = '0%';
-  setText(document.getElementById('progLabel'), 'Iniciando...');
-  setText(document.getElementById('progCounter'), `0 / ${total}`);
-  document.getElementById('sendBtn').style.display = 'none';
-  document.getElementById('stopBtn').style.display = '';
-});
-
-socket.on('send_progress', ({ index, total, name, status, error }) => {
-  const pct = Math.round(((index + 1) / total) * 100);
-  document.getElementById('progBar').style.width = pct + '%';
-  setText(document.getElementById('progCounter'), `${index + 1} / ${total}`);
-  const log = document.getElementById('progLog');
-  if (status === 'sending') {
-    _clearSendTimer();
-    setText(document.getElementById('progLabel'), `Enviando para ${name}...`);
-    const el = document.createElement('div');
-    el.className = 'log-sending'; el.textContent = `⏳ ${name}`; el.id = 'log_' + index;
-    log.appendChild(el);
-  } else if (status === 'done') {
-    const el = document.getElementById('log_' + index) || log.lastChild;
-    if (el) { el.className = 'log-done'; el.textContent = `✓ ${name}`; }
-    if (index + 1 < total) _startSendTimer(_sendDelayMs);
-  } else if (status === 'error') {
-    const el = document.getElementById('log_' + index) || log.lastChild;
-    if (el) { el.className = 'log-error'; el.textContent = `✗ ${name}: ${error}`; }
-    if (index + 1 < total) _startSendTimer(_sendDelayMs);
-  }
-  log.scrollTop = log.scrollHeight;
-});
-
-socket.on('send_done', () => {
-  isSending = false;
-  _clearSendTimer();
-  const sendBtn = document.getElementById('sendBtn');
-  sendBtn.classList.remove('loading');
-  sendBtn.style.display = '';
-  setText(document.getElementById('progLabel'), 'Disparo concluído!');
-  document.getElementById('progBar').style.width = '100%';
-  document.getElementById('progressBox').classList.add('done');
-  document.getElementById('stopBtn').style.display = 'none';
-  const closeBtn = document.getElementById('closeProgressBtn');
-  if (closeBtn) closeBtn.style.display = '';
-  updateSendBtn();
-  if (isElectron && window.electronAPI.showNotification) {
-    window.electronAPI.showNotification({ title: 'ARX Send', body: 'Disparo concluído!' });
-  }
-});
-
-socket.on('send_stopped', () => {
-  isSending = false;
-  _clearSendTimer();
-  const sendBtn = document.getElementById('sendBtn');
-  sendBtn.classList.remove('loading');
-  sendBtn.style.display = '';
-  setText(document.getElementById('progLabel'), 'Parado');
-  document.getElementById('stopBtn').style.display = 'none';
-  const closeBtn = document.getElementById('closeProgressBtn');
-  if (closeBtn) closeBtn.style.display = '';
-  updateSendBtn();
-});
-
-socket.on('update_status', ({ status, version, progress }) => {
-  const banner = document.getElementById('updateBanner');
-  const text = document.getElementById('updateText');
-  const progWrap = document.getElementById('updateProgWrap');
-  const progBar = document.getElementById('updateProgBar');
-  const pctEl = document.getElementById('updatePct');
-  const btn = document.getElementById('updateBtn');
-
-  const dot = document.getElementById('updateDot');
-  const wrap = document.getElementById('updateWrap');
-  const isActive = status === 'available' || status === 'ready';
-  if (dot) dot.style.display = isActive ? 'block' : 'none';
-  if (wrap) wrap.classList.toggle('available', isActive);
-
-  if (status === 'available') {
-    banner.classList.add('show');
-    setHTML(text, `Nova versão <strong>${esc(version)}</strong> disponível — baixando...`);
-    progWrap.style.display = 'none';
-    setText(pctEl, '');
-    btn.style.display = 'none';
-  } else if (status === 'downloading') {
-    banner.classList.add('show');
-    setHTML(text, `Baixando atualização <strong>${esc(version)}</strong>...`);
-    progWrap.style.display = '';
-    progBar.style.width = progress + '%';
-    setText(pctEl, progress + '%');
-    btn.style.display = 'none';
-  } else if (status === 'ready') {
-    banner.classList.add('show');
-    setHTML(text, `✅ Atualização <strong>${esc(version)}</strong> pronta para instalar`);
-    progWrap.style.display = 'none';
-    setText(pctEl, '');
-    btn.style.display = '';
-    btn.disabled = false;
-    setText(btn, 'Reiniciar e instalar');
-  } else {
-    banner.classList.remove('show');
-  }
-});
-
-// ── Atualização de software ──
-
-async function installUpdate() {
-  if (!pendingUpdateInfo) return;
-  if (isElectron && window.electronAPI.downloadUpdate) {
-    const btn = document.getElementById('updateBtn');
-    const text = document.getElementById('updateText');
-    btn.disabled = true;
-    setText(btn, 'Baixando...');
-    const result = await window.electronAPI.downloadUpdate(pendingUpdateInfo);
-    if (result && !result.ok) {
-      btn.disabled = false;
-      setText(btn, pendingUpdateInfo.electronChanged ? 'Baixar instalador' : 'Baixar e reiniciar');
-      setText(text, `Erro: ${result.error}`);
-    }
-    return;
-  }
-  if (!confirm('O aplicativo será fechado para instalar a atualização e reabrirá automaticamente.\n\nDeseja continuar?')) return;
-  const btn = document.getElementById('updateBtn');
-  const text = document.getElementById('updateText');
-  btn.disabled = true;
-  setText(btn, 'Instalando...');
-  setText(text, 'Instalando atualização — o app reabrirá em instantes...');
-  try { await fetch('/api/update/install', { method: 'POST' }); } catch {}
-}
-
-async function checkForUpdates() {
-  const text = document.getElementById('updateText');
-  const btn = document.getElementById('checkUpdateBtn');
-  const updateBtn = document.getElementById('updateBtn');
-  const wrap = document.getElementById('updateWrap');
-  const banner = document.getElementById('updateBanner');
-  wrap?.classList.add('checking');
-  banner?.classList.add('show');
-  btn.disabled = true;
-  setText(btn, 'Verificando...');
-  setText(text, 'Verificando atualizações...');
-  updateBtn.style.display = 'none';
-
-  if (isElectron && window.electronAPI.checkForUpdates) {
-    const result = await window.electronAPI.checkForUpdates();
-    wrap?.classList.remove('checking');
-    btn.disabled = false;
-    setText(btn, 'Verificar atualizações');
-    if (result.updateAvailable) {
-      pendingUpdateInfo = result;
-      if (result.electronChanged) {
-        setHTML(text, `Nova versão <strong>${esc(result.version)}</strong> disponível (Electron atualizado — instalador completo)`);
-      } else {
-        setHTML(text, `Nova versão <strong>${esc(result.version)}</strong> disponível (atualização leve)`);
-      }
-      updateBtn.style.display = '';
-      setText(updateBtn, result.electronChanged ? 'Baixar instalador' : 'Baixar e reiniciar');
-    } else {
-      setText(text, 'Você já está na versão mais recente.');
-      pendingUpdateInfo = null;
-      setTimeout(() => banner?.classList.remove('show'), 3000);
-    }
-    return;
-  }
-
-  try {
-    const res = await fetch('/api/update/check');
-    const data = await res.json();
-    wrap?.classList.remove('checking');
-    btn.disabled = false;
-    setText(btn, 'Verificar atualizações');
-    if (data.updateAvailable) {
-      setHTML(text, `Nova versão <strong>${esc(data.latestVersion)}</strong> disponível`);
-      updateBtn.style.display = '';
-    } else {
-      setText(text, 'Você já está na versão mais recente.');
-      setTimeout(() => banner?.classList.remove('show'), 3000);
-    }
-  } catch {
-    wrap?.classList.remove('checking');
-    btn.disabled = false;
-    setText(btn, 'Verificar atualizações');
-    setText(text, 'Erro ao verificar atualizações.');
-  }
-}
-
-// ── Auth token ──
-let _authToken = null;
-
-if (isElectron && window.electronAPI.getAuthToken) {
-  window.electronAPI.getAuthToken().then(t => { _authToken = t; });
-}
-
-function api(path, opts = {}) {
-  const headers = Object.assign({}, opts.headers);
-  if (_authToken) headers['x-auth-token'] = _authToken;
-  return fetch(`/api/${sessionId}${path}`, Object.assign({}, opts, { headers }));
-}
-
-// ── Resumo do header ──
 function updateHeaderSummary() {
-  const ready = phones.filter(p => p.status === 'ready').length;
-  const total = phones.length;
+  const ready = state.phones.filter(p => p.status === 'ready').length;
+  const total = state.phones.length;
   const el = document.getElementById('phonesSummaryText');
   const summary = document.getElementById('phonesSummary');
   summary.classList.remove('state-none', 'state-ready', 'state-warn');
@@ -448,7 +55,8 @@ function updateHeaderSummary() {
   }
 }
 
-// ── Modal de telefones ──
+// ── Modal de telefones ────────────────────────────────────────────────────
+
 function openPhonesModal() {
   document.getElementById('phoneNameInput')?.focus();
 }
@@ -470,11 +78,11 @@ function renderPhonesList() {
   const count = document.getElementById('phonesModalCount');
   if (!list) return;
 
-  setText(count, `${phones.length} / 10`);
+  setText(count, `${state.phones.length} / 10`);
 
   const btnAdd = document.getElementById('btnAddPhone');
   const limitNote = document.getElementById('phonesLimitNote');
-  if (phones.length >= 10) {
+  if (state.phones.length >= 10) {
     btnAdd.disabled = true;
     limitNote.style.display = '';
   } else {
@@ -482,14 +90,14 @@ function renderPhonesList() {
     limitNote.style.display = 'none';
   }
 
-  if (phones.length === 0) {
+  if (state.phones.length === 0) {
     list.innerHTML = '<div class="phones-empty">Nenhum telefone cadastrado.<br>Adicione um abaixo.</div>';
     return;
   }
 
   const frag = document.createDocumentFragment();
-  for (const phone of phones) {
-    const statusInfo = phoneStatuses[phone.id] || {};
+  for (const phone of state.phones) {
+    const statusInfo = state.phoneStatuses[phone.id] || {};
     const statusLabel = statusInfo.message || STATUS_LABEL[phone.status] || phone.status;
     const isReady = phone.status === 'ready';
     const isConnecting = phone.status === 'connecting' || phone.status === 'qr';
@@ -509,9 +117,10 @@ function renderPhonesList() {
 
     const status = document.createElement('div');
     status.className = 'phone-row-status';
-    status.textContent = isReady && phone.contactCount > 0
-      ? `${statusLabel} · ${phone.contactCount} conversas`
-      : statusLabel;
+    status.textContent =
+      isReady && phone.contactCount > 0
+        ? `${statusLabel} · ${phone.contactCount} conversas`
+        : statusLabel;
 
     info.appendChild(name);
     info.appendChild(status);
@@ -533,7 +142,8 @@ function renderPhonesList() {
     const removeBtn = document.createElement('button');
     removeBtn.className = 'btn-phone-remove';
     removeBtn.setAttribute('aria-label', `Remover ${phone.name}`);
-    removeBtn.innerHTML = '<svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+    removeBtn.innerHTML =
+      '<svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
     removeBtn.onclick = () => doRemovePhone(phone.id, phone.name);
 
     actions.appendChild(connectBtn);
@@ -553,8 +163,7 @@ async function doAddPhone() {
   const input = document.getElementById('phoneNameInput');
   const name = input.value.trim();
   if (!name) { input.focus(); return; }
-  if (phones.length >= 10) return;
-
+  if (state.phones.length >= 10) return;
   const res = await api('/phones', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -567,14 +176,11 @@ async function doAddPhone() {
 }
 
 async function doConnectPhone(phoneId) {
-  const phone = phones.find(p => p.id === phoneId);
+  const phone = state.phones.find(p => p.id === phoneId);
   const phoneName = phone ? phone.name : 'WhatsApp';
-
-  // Mostra QR loading enquanto aguarda
-  currentQrPhoneId = phoneId;
+  state.currentQrPhoneId = phoneId;
   setText(document.getElementById('qrModalTitle'), `Conectar — ${phoneName}`);
   showQrLoading('Abrindo navegador, aguarde...');
-
   await api(`/phones/${phoneId}/connect`, { method: 'POST' });
 }
 
@@ -585,23 +191,24 @@ async function doDisconnectPhone(phoneId) {
 async function doRemovePhone(phoneId, name) {
   if (!confirm(`Remover "${name}"? A sessão do WhatsApp será encerrada.`)) return;
   await api(`/phones/${phoneId}`, { method: 'DELETE' });
-  if (selectedPhoneId === phoneId) {
-    selectedPhoneId = null;
-    contacts = [];
+  if (state.selectedPhoneId === phoneId) {
+    state.selectedPhoneId = null;
+    state.contacts = [];
     renderList();
   }
-  delete phoneContacts[phoneId];
-  delete phoneStatuses[phoneId];
+  delete state.phoneContacts[phoneId];
+  delete state.phoneStatuses[phoneId];
 }
 
 function retryCurrentPhone() {
-  if (currentQrPhoneId) doConnectPhone(currentQrPhoneId);
+  if (state.currentQrPhoneId) doConnectPhone(state.currentQrPhoneId);
 }
 
-// ── QR Modal ──
+// ── QR Modal ──────────────────────────────────────────────────────────────
+
 function closeQrModal() {
   document.getElementById('qrModal').classList.remove('show');
-  currentQrPhoneId = null;
+  state.currentQrPhoneId = null;
 }
 
 function showQrLoading(msg) {
@@ -615,18 +222,19 @@ function showQrLoading(msg) {
   document.getElementById('qrModal').classList.add('show');
 }
 
-// ── Seletor de contatos (painel esquerdo) ──
+// ── Seletor de contatos ───────────────────────────────────────────────────
+
 function updatePhoneSourceSelect() {
   const bar = document.getElementById('phoneSourceBar');
   const sel = document.getElementById('phoneSourceSelect');
-  const readyPhones = phones.filter(p => p.status === 'ready');
+  const readyPhones = state.phones.filter(p => p.status === 'ready');
 
   if (readyPhones.length === 0) {
     bar.style.display = 'none';
     sel.innerHTML = '';
-    if (selectedPhoneId) {
-      selectedPhoneId = null;
-      contacts = [];
+    if (state.selectedPhoneId) {
+      state.selectedPhoneId = null;
+      state.contacts = [];
       renderList();
     }
     return;
@@ -634,9 +242,9 @@ function updatePhoneSourceSelect() {
 
   bar.style.display = '';
   const prev = sel.value;
-  sel.innerHTML = readyPhones.map(p =>
-    `<option value="${esc(p.id)}">${esc(p.name)} (${p.contactCount || 0})</option>`
-  ).join('');
+  sel.innerHTML = readyPhones
+    .map(p => `<option value="${esc(p.id)}">${esc(p.name)} (${p.contactCount || 0})</option>`)
+    .join('');
 
   if (prev && readyPhones.find(p => p.id === prev)) {
     sel.value = prev;
@@ -648,21 +256,21 @@ function updatePhoneSourceSelect() {
 
 function onPhoneSourceChange() {
   const sel = document.getElementById('phoneSourceSelect');
-  selectedPhoneId = sel.value || null;
-  contacts = selectedPhoneId ? (phoneContacts[selectedPhoneId] || []) : [];
+  state.selectedPhoneId = sel.value || null;
+  state.contacts = state.selectedPhoneId ? (state.phoneContacts[state.selectedPhoneId] || []) : [];
   renderList();
   updateSendBtn();
 }
 
-// ── Seletor de telefone para envio ──
+// ── Seletor de telefone para envio ────────────────────────────────────────
+
 function updatePhoneSelectorSend() {
   const sel = document.getElementById('phoneSelectorSend');
-  const readyPhones = phones.filter(p => p.status === 'ready');
+  const readyPhones = state.phones.filter(p => p.status === 'ready');
   const prev = sel.value;
-
-  sel.innerHTML = '<option value="">— Selecione um telefone —</option>' +
+  sel.innerHTML =
+    '<option value="">— Selecione um telefone —</option>' +
     readyPhones.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
-
   if (prev && readyPhones.find(p => p.id === prev)) {
     sel.value = prev;
   } else if (readyPhones.length === 1) {
@@ -680,16 +288,16 @@ function getSelectedSendPhoneId() {
   return document.getElementById('phoneSelectorSend')?.value || null;
 }
 
-// ── Recarregar contatos ──
 async function reloadContacts() {
-  if (!selectedPhoneId) return;
-  await api(`/phones/${selectedPhoneId}/reload-contacts`, { method: 'POST' });
+  if (!state.selectedPhoneId) return;
+  await api(`/phones/${state.selectedPhoneId}/reload-contacts`, { method: 'POST' });
 }
 
-// ── Filtros e lista de contatos ──
+// ── Filtros e lista de contatos ───────────────────────────────────────────
+
 function setFilter(f, btn) {
-  currentFilter = f;
-  _vsLimit = 200;
+  state.currentFilter = f;
+  state.vsLimit = 200;
   document.querySelectorAll('.filter-tab').forEach(b => {
     b.classList.remove('active');
     b.setAttribute('aria-selected', 'false');
@@ -703,8 +311,8 @@ function renderList() {
   const q = document.getElementById('searchInput').value.toLowerCase().trim();
   const list = document.getElementById('contactsList');
 
-  if (!contacts.length && !importedContacts.length) {
-    const hasReady = phones.some(p => p.status === 'ready');
+  if (!state.contacts.length && !state.importedContacts.length) {
+    const hasReady = state.phones.some(p => p.status === 'ready');
     const iconId = hasReady ? 'icon-message-square' : 'icon-smartphone';
     const msg = hasReady
       ? 'Nenhum contato carregado'
@@ -716,10 +324,10 @@ function renderList() {
     return;
   }
 
-  const allContacts = [...importedContacts, ...contacts];
+  const allContacts = [...state.importedContacts, ...state.contacts];
   const filtered = allContacts.filter(c => {
-    if (currentFilter === 'people' && c.isGroup) return false;
-    if (currentFilter === 'groups' && !c.isGroup) return false;
+    if (state.currentFilter === 'people' && c.isGroup) return false;
+    if (state.currentFilter === 'groups' && !c.isGroup) return false;
     if (q && !c.name.toLowerCase().includes(q)) return false;
     return true;
   });
@@ -730,10 +338,10 @@ function renderList() {
     return;
   }
 
-  const visible = filtered.slice(0, _vsLimit);
+  const visible = filtered.slice(0, state.vsLimit);
   const frag = document.createDocumentFragment();
   for (const c of visible) {
-    const sel = selectedIds.has(c.id);
+    const sel = state.selectedIds.has(c.id);
     const div = document.createElement('div');
     div.className = 'contact-item' + (sel ? ' selected' : '');
     div.setAttribute('onclick', `toggleContact('${esc(c.id)}')`);
@@ -781,43 +389,50 @@ function renderList() {
   list.innerHTML = '';
   list.appendChild(frag);
 
-  if (filtered.length > _vsLimit) {
-    const remaining = filtered.length - _vsLimit;
+  if (filtered.length > state.vsLimit) {
+    const remaining = filtered.length - state.vsLimit;
     const btn = document.createElement('button');
     btn.className = 'load-more-btn';
     btn.textContent = `Mostrar mais ${remaining} contato${remaining !== 1 ? 's' : ''}`;
-    btn.onclick = () => { _vsLimit += 200; renderList(); };
+    btn.onclick = () => { state.vsLimit += 200; renderList(); };
     list.appendChild(btn);
   }
 
-  setText(document.getElementById('selBadge'), selectedIds.size);
+  setText(document.getElementById('selBadge'), state.selectedIds.size);
   updateSendBtn();
 }
 
 function toggleContact(id) {
-  if (selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id);
-  renderList(); updateSendBtn();
+  if (state.selectedIds.has(id)) state.selectedIds.delete(id);
+  else state.selectedIds.add(id);
+  renderList();
+  updateSendBtn();
 }
 
 function selectAll() {
   const q = document.getElementById('searchInput').value.toLowerCase().trim();
-  const allContacts = [...importedContacts, ...contacts];
+  const allContacts = [...state.importedContacts, ...state.contacts];
   allContacts.filter(c => {
-    if (currentFilter === 'people' && c.isGroup) return false;
-    if (currentFilter === 'groups' && !c.isGroup) return false;
+    if (state.currentFilter === 'people' && c.isGroup) return false;
+    if (state.currentFilter === 'groups' && !c.isGroup) return false;
     if (q && !c.name.toLowerCase().includes(q)) return false;
     return true;
-  }).forEach(c => selectedIds.add(c.id));
-  renderList(); updateSendBtn();
+  }).forEach(c => state.selectedIds.add(c.id));
+  renderList();
+  updateSendBtn();
 }
 
 function deselectAll() {
-  if (selectedIds.size > 10 && !confirm(`Remover ${selectedIds.size} contatos selecionados?`)) return;
-  selectedIds.clear(); renderList(); updateSendBtn();
+  if (state.selectedIds.size > 10 && !confirm(`Remover ${state.selectedIds.size} contatos selecionados?`)) return;
+  state.selectedIds.clear();
+  renderList();
+  updateSendBtn();
 }
 
+// ── Modo de envio ─────────────────────────────────────────────────────────
+
 function setMode(mode, btn) {
-  sendMode = mode;
+  state.sendMode = mode;
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('textSection').style.display = mode === 'file' ? 'none' : '';
@@ -830,11 +445,13 @@ function getDelayMs() {
   const unit = document.getElementById('delayUnit')?.value || 's';
   return unit === 'm' ? val * 60000 : val * 1000;
 }
+
 function getDelayLabel() {
   const val = Math.max(1, parseInt(document.getElementById('delayVal')?.value, 10) || 3);
   const unit = document.getElementById('delayUnit')?.value || 's';
   return unit === 'm' ? `${val}min` : `${val}s`;
 }
+
 function updateDelayHint() {
   const val = Math.max(1, parseInt(document.getElementById('delayVal')?.value, 10) || 3);
   const unit = document.getElementById('delayUnit')?.value || 's';
@@ -843,8 +460,11 @@ function updateDelayHint() {
   if (el) setText(el, `Envio a cada ${val} ${label}`);
   updateSummary();
 }
+
 document.getElementById('delayVal')?.addEventListener('input', updateDelayHint);
 document.getElementById('delayUnit')?.addEventListener('change', updateDelayHint);
+
+// ── Draft de mensagem ─────────────────────────────────────────────────────
 
 let _draftTimer = null;
 function saveDraft() {
@@ -868,6 +488,8 @@ document.getElementById('msgText').addEventListener('input', function () {
   }
 })();
 
+// ── Upload de arquivo de mídia ────────────────────────────────────────────
+
 const fileInput = document.getElementById('fileInput');
 const fileZone = document.getElementById('fileZone');
 
@@ -875,7 +497,8 @@ fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(
 fileZone.addEventListener('dragover', e => { e.preventDefault(); fileZone.classList.add('drag'); });
 fileZone.addEventListener('dragleave', () => fileZone.classList.remove('drag'));
 fileZone.addEventListener('drop', e => {
-  e.preventDefault(); fileZone.classList.remove('drag');
+  e.preventDefault();
+  fileZone.classList.remove('drag');
   if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
 });
 
@@ -885,7 +508,7 @@ async function handleFile(file) {
   const res = await api('/upload', { method: 'POST', body: formData });
   const data = await res.json();
   if (!data.ok) { alert('Erro ao enviar arquivo: ' + data.error); return; }
-  uploadedFile = data;
+  state.uploadedFile = data;
   setText(document.getElementById('fileName'), data.original);
   setText(document.getElementById('fileSize'), formatBytes(data.size));
   const thumb = document.getElementById('fileThumb');
@@ -904,11 +527,14 @@ async function handleFile(file) {
 }
 
 function removeFile() {
-  uploadedFile = null; fileInput.value = '';
+  state.uploadedFile = null;
+  fileInput.value = '';
   document.getElementById('filePreview').classList.remove('show');
   document.getElementById('fileZone').style.display = '';
   updateSendBtn();
 }
+
+// ── Resumo e botão de envio ────────────────────────────────────────────────
 
 function switchTab(tab) {
   if (tab === 'send') updateSummary();
@@ -916,77 +542,31 @@ function switchTab(tab) {
 
 function updateSummary() {
   const sendPhoneId = getSelectedSendPhoneId();
-  const phone = phones.find(p => p.id === sendPhoneId);
-  setText(document.getElementById('sumContacts'), selectedIds.size);
+  const phone = state.phones.find(p => p.id === sendPhoneId);
+  setText(document.getElementById('sumContacts'), state.selectedIds.size);
   setText(document.getElementById('sumDelay'), getDelayLabel());
-  setText(document.getElementById('sumMsg'), sendMode === 'file' ? '(sem texto)' : (document.getElementById('msgText').value.trim() || '—'));
-  setText(document.getElementById('sumFile'), uploadedFile ? uploadedFile.original : '—');
+  setText(document.getElementById('sumMsg'), state.sendMode === 'file' ? '(sem texto)' : (document.getElementById('msgText').value.trim() || '—'));
+  setText(document.getElementById('sumFile'), state.uploadedFile ? state.uploadedFile.original : '—');
   setText(document.getElementById('sumPhone'), phone ? phone.name : '—');
 }
 
 function updateSendBtn() {
   const hasText = document.getElementById('msgText').value.trim().length > 0;
-  const hasContent = sendMode === 'text' ? hasText : sendMode === 'file' ? !!uploadedFile : hasText && !!uploadedFile;
+  const hasContent = state.sendMode === 'text'
+    ? hasText
+    : state.sendMode === 'file'
+    ? !!state.uploadedFile
+    : hasText && !!state.uploadedFile;
   const sendPhoneId = getSelectedSendPhoneId();
-  const phoneReady = !!(sendPhoneId && phones.find(p => p.id === sendPhoneId && p.status === 'ready'));
-  document.getElementById('sendBtn').disabled = !(selectedIds.size > 0 && hasContent && phoneReady) || isSending;
+  const phoneReady = !!(sendPhoneId && state.phones.find(p => p.id === sendPhoneId && p.status === 'ready'));
+  document.getElementById('sendBtn').disabled = !(state.selectedIds.size > 0 && state.selectedIds.size <= 5000 && hasContent && phoneReady) || state.isSending;
 }
 
-async function startSend() {
-  if (isSending) return;
-  const sendPhoneId = getSelectedSendPhoneId();
-  if (!sendPhoneId) { alert('Selecione um telefone para enviar.'); return; }
-  _sendDelayMs = getDelayMs();
-
-  updateSummary();
-  const sendBtn = document.getElementById('sendBtn');
-  sendBtn.classList.add('loading');
-  sendBtn.disabled = true;
-
-  const contactsData = {};
-  importedContacts.forEach(c => { if (c.rowData) contactsData[c.id] = c.rowData; });
-
-  try {
-    const res = await api('/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contactIds: [...selectedIds],
-        message: sendMode === 'file' ? '' : document.getElementById('msgText').value,
-        filename: uploadedFile?.filename || null,
-        delayMs: getDelayMs(),
-        phoneId: sendPhoneId,
-        contactsData: Object.keys(contactsData).length ? contactsData : undefined,
-      }),
-    });
-    const data = await res.json();
-    if (!data.ok) {
-      document.getElementById('sendBtn').classList.remove('loading');
-      document.getElementById('sendBtn').style.display = '';
-      setText(document.getElementById('progLabel'), '❌ ' + (data.error || 'Erro ao iniciar disparo'));
-      document.getElementById('progressBox').classList.add('show');
-      document.getElementById('progressActions').style.display = '';
-    }
-  } catch (e) {
-    document.getElementById('sendBtn').classList.remove('loading');
-    document.getElementById('sendBtn').style.display = '';
-    setText(document.getElementById('progLabel'), '❌ Erro de comunicação: ' + e.message);
-    document.getElementById('progressBox').classList.add('show');
-    document.getElementById('progressActions').style.display = '';
-  }
-}
-
-async function stopSend() { await api('/stop', { method: 'POST' }); }
-
-function closeProgressView() {
-  document.getElementById('progressBox').classList.remove('show');
-  const closeBtn = document.getElementById('closeProgressBtn');
-  if (closeBtn) closeBtn.style.display = 'none';
-}
-
+// ── Helpers de arquivo ────────────────────────────────────────────────────
 
 function fileIcon(mime, name) {
-  const svg = (path) => `<svg aria-hidden="true" focusable="false" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
+  const svg = path =>
+    `<svg aria-hidden="true" focusable="false" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
   if (mime.startsWith('image/')) return svg('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>');
   if (mime.startsWith('video/')) return svg('<polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/>');
   if (mime.startsWith('audio/')) return svg('<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>');
@@ -995,19 +575,22 @@ function fileIcon(mime, name) {
   if (mime.includes('sheet') || /\.xlsx?$/.test(name)) return svg('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/>');
   return svg('<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>');
 }
+
 function formatBytes(b) {
   if (b < 1024) return b + ' B';
   if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
   return (b / 1048576).toFixed(1) + ' MB';
 }
 
+// ── Variáveis de planilha ─────────────────────────────────────────────────
+
 function updateVarsBar() {
   const section = document.getElementById('varsSection');
   const bar = document.getElementById('varsBar');
-  if (!sheetHeaders.length) { section.style.display = 'none'; return; }
+  if (!state.sheetHeaders.length) { section.style.display = 'none'; return; }
   section.style.display = '';
   bar.innerHTML = '';
-  sheetHeaders.forEach(h => {
+  state.sheetHeaders.forEach(h => {
     const btn = document.createElement('button');
     btn.className = 'var-btn';
     btn.textContent = h;
@@ -1017,7 +600,7 @@ function updateVarsBar() {
 
   const sel = document.getElementById('previewContactSelect');
   sel.innerHTML = '';
-  importedContacts.forEach((c, i) => {
+  state.importedContacts.forEach((c, i) => {
     const opt = document.createElement('option');
     opt.value = i;
     opt.textContent = (c.name || c.id.replace('@c.us', '')) + ` (#${i + 1})`;
@@ -1042,7 +625,7 @@ function updateMsgPreview() {
   const previewEl = document.getElementById('msgPreview');
   if (!previewEl) return;
   const idx = parseInt(document.getElementById('previewContactSelect')?.value || '0', 10);
-  const contact = importedContacts[idx];
+  const contact = state.importedContacts[idx];
   if (!contact?.rowData) { setText(previewEl, '—'); return; }
   const template = document.getElementById('msgText').value;
   if (!template.trim()) { setText(previewEl, '—'); return; }
@@ -1070,8 +653,10 @@ function updateMsgPreview() {
   });
 }
 
+// ── Modal de importação de planilha ───────────────────────────────────────
+
 function openImportModal() {
-  importFilename = null;
+  state.importFilename = null;
   document.getElementById('importFileInput').value = '';
   setText(document.getElementById('importFileError'), '');
   document.getElementById('importFileZone').classList.remove('drag');
@@ -1096,7 +681,8 @@ const importFileInput = document.getElementById('importFileInput');
 importFileZone.addEventListener('dragover', e => { e.preventDefault(); importFileZone.classList.add('drag'); });
 importFileZone.addEventListener('dragleave', () => importFileZone.classList.remove('drag'));
 importFileZone.addEventListener('drop', e => {
-  e.preventDefault(); importFileZone.classList.remove('drag');
+  e.preventDefault();
+  importFileZone.classList.remove('drag');
   if (e.dataTransfer.files[0]) handleImportFile(e.dataTransfer.files[0]);
 });
 importFileInput.addEventListener('change', () => {
@@ -1119,7 +705,7 @@ async function handleImportFile(file) {
     setText(document.getElementById('importFileError'), data.error || 'Erro ao ler arquivo');
     return;
   }
-  importFilename = data.filename;
+  state.importFilename = data.filename;
   buildImportStep2(data.headers, data.preview);
   showImportStep(2);
 }
@@ -1141,15 +727,12 @@ function buildImportStep2(headers, preview) {
     opt1.textContent = h || 'Coluna ' + (i + 1);
     phoneEl.appendChild(opt1);
 
-    const opt2 = document.createElement('option');
-    opt2.value = i;
-    opt2.textContent = h || 'Coluna ' + (i + 1);
+    const opt2 = opt1.cloneNode(true);
     nameEl.appendChild(opt2);
   });
 
   const guess = headers.findIndex(h => /tel|fone|celular|whatsapp|number|phone/i.test(h));
   if (guess >= 0) phoneEl.value = guess;
-
   const guessName = headers.findIndex(h => /nome|name|cliente|contato/i.test(h));
   if (guessName >= 0) nameEl.value = guessName;
 
@@ -1182,7 +765,7 @@ function buildImportStep2(headers, preview) {
 }
 
 async function confirmImport() {
-  if (!importFilename) return;
+  if (!state.importFilename) return;
   const phoneCol = document.getElementById('importPhoneCol').value;
   const nameCol = document.getElementById('importNameCol').value;
   const btn = document.getElementById('importOkBtn');
@@ -1192,7 +775,7 @@ async function confirmImport() {
   const r = await api('/extract-phones', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filename: importFilename, column: phoneCol, nameColumn: nameCol || '' }),
+    body: JSON.stringify({ filename: state.importFilename, column: phoneCol, nameColumn: nameCol || '' }),
   });
   const data = await r.json();
   btn.disabled = false;
@@ -1200,18 +783,19 @@ async function confirmImport() {
 
   if (!data.ok) { alert('Erro: ' + data.error); return; }
 
-  importedContacts = data.contacts;
-  sheetHeaders = data.headers || [];
-  importedContacts.forEach(c => selectedIds.add(c.id));
+  state.importedContacts = data.contacts;
+  state.sheetHeaders = data.headers || [];
+  state.importedContacts.forEach(c => state.selectedIds.add(c.id));
   renderList();
   updateSendBtn();
   updateVarsBar();
   closeImportModal();
-  showToast(`${importedContacts.length} contatos importados com sucesso`, 'success');
+  showToast(`${state.importedContacts.length} contatos importados com sucesso`, 'success');
 }
 
-// ── Atalhos de teclado ──
-document.addEventListener('keydown', (e) => {
+// ── Atalhos de teclado ────────────────────────────────────────────────────
+
+document.addEventListener('keydown', e => {
   const tag = document.activeElement?.tagName;
   const inInput = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
 
@@ -1231,7 +815,8 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ── Diagnóstico ──
+// ── Diagnóstico / logs ────────────────────────────────────────────────────
+
 let _diagLines = [];
 
 async function openDiagModal() {
@@ -1243,7 +828,7 @@ async function openDiagModal() {
 
   try {
     const headers = {};
-    if (_authToken) headers['x-auth-token'] = _authToken;
+    if (state.authToken) headers['x-auth-token'] = state.authToken;
     const res = await fetch('/api/logs', { headers });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const { lines, file } = await res.json();
@@ -1259,11 +844,11 @@ async function openDiagModal() {
         return `<div class="diag-log-line ${cls}">${esc(line)}</div>`;
       }).join('');
     }
-    const wrap = document.getElementById('diagLogWrap');
-    wrap.scrollTop = wrap.scrollHeight;
+    document.getElementById('diagLogWrap').scrollTop = document.getElementById('diagLogWrap').scrollHeight;
   } catch (err) {
     document.getElementById('diagLoading').style.display = 'none';
-    document.getElementById('diagLogLines').innerHTML = `<span style="color:var(--red)">Erro ao carregar logs: ${esc(err.message)}</span>`;
+    document.getElementById('diagLogLines').innerHTML =
+      `<span style="color:var(--red)">Erro ao carregar logs: ${esc(err.message)}</span>`;
   }
 }
 
@@ -1287,7 +872,8 @@ async function openDiagFolder() {
   }
 }
 
-// ── Toast ──
+// ── Toast ─────────────────────────────────────────────────────────────────
+
 function showToast(msg, type) {
   const t = document.getElementById('appToast');
   t.textContent = msg;
@@ -1296,19 +882,22 @@ function showToast(msg, type) {
   t._t = setTimeout(() => t.classList.remove('show'), 4000);
 }
 
-// ── Focus trap ──
+// ── Focus trap ────────────────────────────────────────────────────────────
+
 function trapFocus(modal) {
   const sel = 'button:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
-  modal.addEventListener('keydown', (e) => {
+  modal.addEventListener('keydown', e => {
     if (e.key !== 'Tab' || !modal.classList.contains('show')) return;
     const els = [...modal.querySelectorAll(sel)].filter(el => {
       const s = getComputedStyle(el);
       return s.display !== 'none' && s.visibility !== 'hidden';
     });
     if (!els.length) return;
-    const first = els[0], last = els[els.length - 1];
+    const first = els[0];
+    const last = els[els.length - 1];
     if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   });
 }
+
 ['importModal', 'phonesModal', 'qrModal', 'diagModal'].forEach(id => trapFocus(document.getElementById(id)));

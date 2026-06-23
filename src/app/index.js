@@ -9,9 +9,11 @@ const { registerSheetRoutes } = require('../routes/sheetRoutes');
 const { registerUpdateRoutes } = require('../routes/updateRoutes');
 const { registerUploadRoutes } = require('../routes/uploadRoutes');
 const { registerLogRoutes } = require('../routes/logRoutes');
+const { registerHealthRoutes } = require('../routes/healthRoutes');
 const { registerSocketHandlers } = require('../socket/handlers');
 const { multerErrorHandler } = require('../services/mediaService');
 const { startCleanupIntervals, stopCleanupIntervals } = require('../services/cleanupService');
+const { errorHandler } = require('../utils/errors');
 
 function createApp() {
   const app = express();
@@ -31,11 +33,13 @@ function createApp() {
 function registerAllRoutes(app, io) {
   registerUploadRoutes(app);
   registerLogRoutes(app);
+  registerHealthRoutes(app);
   registerSessionRoutes(app, io);
   registerSendRoutes(app, io);
   registerSheetRoutes(app);
   registerUpdateRoutes(app, io);
   app.use(multerErrorHandler);
+  app.use(errorHandler);
 }
 
 function ensureDirectories() {

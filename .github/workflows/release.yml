@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Extract version from tag
+        id: version
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Build
+        run: npm run build
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Verify artifacts
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          INSTALLER="dist/ARX-Send-Setup-${VERSION}.exe"
+          ASAR="dist/app.asar"
+          RELEASE_JSON="dist/release.json"
+
+          for f in "$INSTALLER" "$ASAR" "$RELEASE_JSON"; do
+            if [ ! -f "$f" ]; then
+              echo "❌ Artefato faltando: $f"
+              exit 1
+            fi
+          done
+
+          # Verifica que o SHA-256 do release.json bate com os arquivos reais
+          node -e "
+            const fs = require('fs');
+            const crypto = require('crypto');
+            const rel = JSON.parse(fs.readFileSync('dist/release.json', 'utf8'));
+            const sha = f => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
+            const asarSha = sha('dist/app.asar');
+            if (rel.asar && rel.asar.sha256 !== asarSha) {
+              console.error('SHA-256 do asar não confere!');
+              process.exit(1);
+            }
+            console.log('✓ Artefatos verificados');
+          "
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ARX Send v${{ steps.version.outputs.VERSION }}
+          files: |
+            dist/ARX-Send-Setup-${{ steps.version.outputs.VERSION }}.exe
+            dist/app.asar
+            dist/release.json
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}

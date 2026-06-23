@@ -1,14 +1,31 @@
-const path = require('path');
-const fs = require('fs');
-const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode');
-const config = require('../app/config');
-const { sleep } = require('../utils/helpers');
-const { getChromiumPath } = require('../utils/chromium');
 
-const MAX_PHONES_PER_SESSION = 10;
+/**
+ * @fileoverview sessionService — fachada de gerenciamento de sessões.
+ *
+ * Mantém o mapa de sessões em memória e re-exporta as operações dos três
+ * módulos especializados: phoneStore, connectionManager, contactManager.
+ *
+ * Toda a API pública deste módulo permanece idêntica à versão anterior
+ * para garantir compatibilidade com routes e socket handlers existentes.
+ */
+
+const config = require('../app/config');
+const logger = require('../utils/logger');
+const { loadPhones, savePhones, makePhone, deletPhoneData, deletePhoneData } = require('./phoneStore');
+const { connectPhone, disconnectPhone, destroyAllSessions } = require('./connectionManager');
+const { loadContactsForPhone } = require('./contactManager');
+const { EVENTS } = require('../socket/events');
+
+/** @type {Object.<string, import('../types').Session>} */
 const sessions = {};
 
+// ── Sessões ────────────────────────────────────────────────────────────
+
+/**
+ * Retorna ou cria uma sessão, carregando telefones salvos do disco.
+ * @param {string} id
+ * @returns {import('../types').Session}
+ */
 function getSession(id) {
   if (!sessions[id]) {
     sessions[id] = {
@@ -18,89 +35,32 @@ function getSession(id) {
       stopRequested: false,
       lastActivityAt: Date.now(),
     };
-    loadPhones(id);
+    loadPhones(sessions[id]);
   }
   return sessions[id];
 }
 
+/** @param {string} id */
 function touchSession(id) {
   if (sessions[id]) sessions[id].lastActivityAt = Date.now();
 }
 
-// ── Persistência de telefones ──
+// ── Emit helpers ────────────────────────────────────────────────────────
 
-function phonesFilePath(sessionId) {
-  return path.join(config.cacheDir, `${sessionId}_phones.json`);
-}
-
-function loadPhones(sessionId) {
-  const sess = sessions[sessionId];
-  const file = phonesFilePath(sessionId);
-  try {
-    if (fs.existsSync(file)) {
-      const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
-      for (const p of saved) {
-        sess.phones[p.id] = makePhone(p.id, p.name);
-      }
-    }
-  } catch (err) {
-    console.warn(`[${sessionId}] Falha ao carregar telefones:`, err.message);
-  }
-}
-
-function savePhones(sessionId) {
-  const sess = sessions[sessionId];
-  if (!sess) return;
-  const data = Object.values(sess.phones).map(p => ({ id: p.id, name: p.name }));
-  try {
-    fs.writeFileSync(phonesFilePath(sessionId), JSON.stringify(data));
-  } catch (err) {
-    console.warn(`[${sessionId}] Falha ao salvar telefones:`, err.message);
-  }
-}
-
-function makePhone(id, name) {
-  return {
-    id,
-    name,
-    client: null,
-    status: 'disconnected',
-    contacts: loadCachedContacts(id),
-    watchdog: null,
-    lastActivityAt: Date.now(),
-  };
-}
-
-// ── Contatos por telefone ──
-
-function contactsCachePath(phoneId) {
-  return path.join(config.cacheDir, `phone_${phoneId}.json`);
-}
-
-function loadCachedContacts(phoneId) {
-  const file = contactsCachePath(phoneId);
-  try {
-    if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch (err) {
-    console.warn(`[phone:${phoneId}] Falha ao carregar cache de contatos:`, err.message);
-  }
-  return [];
-}
-
-async function saveCachedContacts(phoneId, contacts) {
-  try {
-    await fs.promises.writeFile(contactsCachePath(phoneId), JSON.stringify(contacts));
-  } catch (err) {
-    console.warn(`[phone:${phoneId}] Falha ao salvar cache de contatos:`, err.message);
-  }
-}
-
-// ── Emit helpers ──
-
+/**
+ * @param {string} sessionId
+ * @param {import('socket.io').Server} io
+ * @param {string} event
+ * @param {*} data
+ */
 function emit(sessionId, io, event, data) {
   io.to(`s:${sessionId}`).emit(event, data);
 }
 
+/**
+ * @param {import('../types').Session} sess
+ * @returns {import('../types').PhoneListItem[]}
+ */
 function phonesListPayload(sess) {
   return Object.values(sess.phones).map(p => ({
     id: p.id,
@@ -110,32 +70,56 @@ function phonesListPayload(sess) {
   }));
 }
 
+/**
+ * @param {string} sessionId
+ * @param {import('socket.io').Server} io
+ */
 function emitPhonesList(sessionId, io) {
   const sess = getSession(sessionId);
-  emit(sessionId, io, 'phones_list', { phones: phonesListPayload(sess) });
+  emit(sessionId, io, EVENTS.PHONES_LIST, { phones: phonesListPayload(sess) });
 }
 
-// ── Gerenciamento de telefones ──
+// Contador para garantir unicidade de IDs mesmo em chamadas no mesmo milissegundo
+let _phoneIdCounter = 0;
 
+// ── CRUD de telefones ───────────────────────────────────────────────────
+
+/**
+ * @param {string} sessionId
+ * @param {string} name
+ * @returns {string|null} phoneId ou null se limite atingido
+ */
 function addPhone(sessionId, name) {
   const sess = getSession(sessionId);
-  if (Object.keys(sess.phones).length >= MAX_PHONES_PER_SESSION) return null;
-  const id = `ph_${Date.now()}`;
+  if (Object.keys(sess.phones).length >= config.MAX_PHONES_PER_SESSION) return null;
+  const id = `ph_${Date.now()}_${++_phoneIdCounter}`;
   sess.phones[id] = makePhone(id, name);
-  savePhones(sessionId);
+  savePhones(sessionId, sess);
   return id;
 }
 
+/**
+ * @param {string} sessionId
+ * @param {string} phoneId
+ * @param {string} name
+ */
 function renamePhone(sessionId, phoneId, name) {
   const sess = sessions[sessionId];
   if (!sess) return false;
   const phone = sess.phones[phoneId];
   if (!phone) return false;
   phone.name = name;
-  savePhones(sessionId);
+  savePhones(sessionId, sess);
   return true;
 }
 
+/**
+ * Remove um telefone: faz logout, destroy e apaga dados LocalAuth.
+ * Use somente quando o usuário remove o telefone explicitamente.
+ *
+ * @param {string} sessionId
+ * @param {string} phoneId
+ */
 function removePhone(sessionId, phoneId) {
   const sess = sessions[sessionId];
   if (!sess) return;
@@ -148,248 +132,57 @@ function removePhone(sessionId, phoneId) {
     phone.client = null;
   }
   delete sess.phones[phoneId];
-  savePhones(sessionId);
-  try { fs.unlinkSync(contactsCachePath(phoneId)); } catch {}
-  // Remove saved WhatsApp auth data for this phone
-  const authDir = path.join(config.sessionDir, sessionId, phoneId);
-  fs.rm(authDir, { recursive: true, force: true }, () => {});
+  savePhones(sessionId, sess);
+  deletePhoneData(sessionId, phoneId);
 }
 
-// ── Watchdog por telefone ──
+// ── Wrappers de conexão (compatibilidade de assinatura com routes) ──────
 
-function setPhoneWatchdog(sessionId, phoneId, io, ms = config.WATCHDOG_TIMEOUT_MS) {
-  const sess = sessions[sessionId];
-  if (!sess) return;
-  const phone = sess.phones[phoneId];
-  if (!phone) return;
-  clearTimeout(phone.watchdog);
-  phone.watchdog = setTimeout(() => {
-    if (phone.status === 'connecting') {
-      console.log(`[${sessionId}:${phoneId}] Watchdog: travado em connecting — reconectando...`);
-      emit(sessionId, io, 'phone_status', { phoneId, status: 'connecting', message: 'Reconectando automaticamente...' });
-      connectPhone(sessionId, phoneId, io).catch(err =>
-        console.error(`[${sessionId}:${phoneId}] Watchdog erro:`, err)
-      );
-    }
-  }, ms);
-}
-
-function clearPhoneWatchdog(sessionId, phoneId) {
-  const sess = sessions[sessionId];
-  if (!sess) return;
-  const phone = sess.phones[phoneId];
-  if (!phone) return;
-  clearTimeout(phone.watchdog);
-  phone.watchdog = null;
-}
-
-// ── Conexão / desconexão ──
-
-async function connectPhone(sessionId, phoneId, io) {
+/**
+ * Conecta um telefone. Wrapper que resolve a sessão antes de delegar.
+ * @param {string} sessionId
+ * @param {string} phoneId
+ * @param {import('socket.io').Server} io
+ */
+async function connectPhoneById(sessionId, phoneId, io) {
   const sess = getSession(sessionId);
-  const phone = sess.phones[phoneId];
-  if (!phone) return;
-
-  if (phone.client) {
-    try { await Promise.race([phone.client.destroy(), sleep(5000)]); } catch {}
-    phone.client = null;
-    await sleep(1000);
-  }
-
-  const executablePath = getChromiumPath();
-  console.log(`[${sessionId}:${phoneId}] ${executablePath ? '✓ Chromium: ' + executablePath : '⚠ Chromium padrão'}`);
-
-  phone.client = new Client({
-    authStrategy: new LocalAuth({
-      clientId: `${sessionId}_${phoneId}`,
-      dataPath: path.join(config.sessionDir, sessionId, phoneId),
-    }),
-    webVersionCache: {
-      type: 'remote',
-      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1041871181-alpha.html',
-    },
-    puppeteer: {
-      headless: true,
-      executablePath,
-      timeout: 120000,
-      protocolTimeout: 120000,
-      args: [
-        '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
-        '--disable-extensions', '--disable-default-apps', '--disable-sync',
-        '--disable-translate', '--hide-scrollbars', '--no-first-run',
-        '--window-size=1280,800',
-        '--disable-blink-features=AutomationControlled',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-ipc-flooding-protection',
-        '--use-angle=swiftshader-webgl',
-        '--disable-features=CalculateNativeWinOcclusion,BackForwardCache',
-      ],
-    },
-  });
-
-  phone.client.on('qr', async (qr) => {
-    phone.status = 'qr';
-    const qrImage = await qrcode.toDataURL(qr);
-    emit(sessionId, io, 'phone_qr', { phoneId, phoneName: phone.name, qr: qrImage });
-    emit(sessionId, io, 'phone_status', { phoneId, status: 'qr', message: 'Escaneie o QR code' });
-    emitPhonesList(sessionId, io);
-  });
-
-  phone.client.on('loading_screen', (percent) => {
-    phone.status = 'connecting';
-    emit(sessionId, io, 'phone_status', { phoneId, status: 'connecting', message: `Carregando... ${percent}%` });
-    setPhoneWatchdog(sessionId, phoneId, io, 120000);
-  });
-
-  phone.client.on('authenticated', () => {
-    phone.status = 'connecting';
-    emit(sessionId, io, 'phone_status', { phoneId, status: 'connecting', message: 'Autenticado! Inicializando...' });
-    setPhoneWatchdog(sessionId, phoneId, io, 120000);
-    emitPhonesList(sessionId, io);
-  });
-
-  phone.client.on('ready', async () => {
-    clearPhoneWatchdog(sessionId, phoneId);
-    phone.status = 'ready';
-    phone.lastActivityAt = Date.now();
-    touchSession(sessionId);
-    emit(sessionId, io, 'phone_status', { phoneId, status: 'ready', message: 'Conectado! Aguardando sincronização...' });
-    emitPhonesList(sessionId, io);
-
-    if (phone.contacts.length > 0) {
-      emit(sessionId, io, 'phone_contacts', { phoneId, contacts: phone.contacts });
-      emit(sessionId, io, 'phone_status', { phoneId, status: 'ready', message: `${phone.contacts.length} conversas (cache) — atualizando...` });
-    }
-
-    await sleep(3000);
-    if (phone.status === 'ready') await loadContactsForPhone(sessionId, phoneId, io);
-  });
-
-  phone.client.on('disconnected', (reason) => {
-    clearPhoneWatchdog(sessionId, phoneId);
-    phone.status = 'disconnected';
-    phone.contacts = [];
-    emit(sessionId, io, 'phone_status', { phoneId, status: 'disconnected', message: `Desconectado: ${reason}` });
-    emit(sessionId, io, 'phone_contacts', { phoneId, contacts: [] });
-    emitPhonesList(sessionId, io);
-  });
-
-  phone.client.on('auth_failure', async () => {
-    clearPhoneWatchdog(sessionId, phoneId);
-    phone.status = 'disconnected';
-    try { await phone.client.destroy(); } catch {}
-    phone.client = null;
-    // Apaga dados de LocalAuth corrompidos/expirados para que a próxima tentativa gere QR novo
-    const authDir = path.join(config.sessionDir, sessionId, phoneId);
-    fs.rm(authDir, { recursive: true, force: true }, () => {});
-    emit(sessionId, io, 'phone_status', { phoneId, status: 'error', message: 'Sessão expirada. Clique em Conectar para escanear um novo QR.' });
-    emitPhonesList(sessionId, io);
-  });
-
-  phone.status = 'connecting';
-  emit(sessionId, io, 'phone_status', { phoneId, status: 'connecting', message: 'Iniciando...' });
-  emitPhonesList(sessionId, io);
-  setPhoneWatchdog(sessionId, phoneId, io, 120000);
-  phone.client.initialize().catch(err => {
-    console.error(`[${sessionId}:${phoneId}] Falha ao inicializar cliente:`, err.message);
-    clearPhoneWatchdog(sessionId, phoneId);
-    try { phone.client.destroy(); } catch {}
-    phone.client = null;
-    phone.status = 'disconnected';
-    // Limpa LocalAuth corrompido para que próxima tentativa gere QR novo
-    const authDir = path.join(config.sessionDir, sessionId, phoneId);
-    fs.rm(authDir, { recursive: true, force: true }, () => {
-      console.log(`[${sessionId}:${phoneId}] LocalAuth limpo após falha de inicialização`);
-    });
-    const isContextError = err.message.includes('context') || err.message.includes('Target closed') || err.message.includes('detached');
-    const msg = isContextError
-      ? 'Sessão anterior inválida. Clique em Conectar para gerar um novo QR.'
-      : 'Falha ao abrir o navegador. Verifique se o Google Chrome está instalado.';
-    emit(sessionId, io, 'phone_status', { phoneId, status: 'error', message: msg });
-    emitPhonesList(sessionId, io);
-  });
+  return connectPhone(sess, phoneId, io);
 }
 
-async function disconnectPhone(sessionId, phoneId) {
+/**
+ * Desconecta um telefone e emite status para o room.
+ * @param {string} sessionId
+ * @param {string} phoneId
+ */
+async function disconnectPhoneById(sessionId, phoneId) {
   const sess = sessions[sessionId];
   if (!sess) return;
   const phone = sess.phones[phoneId];
   if (!phone) return;
-  clearPhoneWatchdog(sessionId, phoneId);
-  if (phone.client) {
-    try { await phone.client.logout(); } catch {}
-    try { await phone.client.destroy(); } catch {}
-    phone.client = null;
-  }
-  phone.status = 'disconnected';
-  phone.contacts = [];
+  await disconnectPhone(phone);
 }
 
-// ── Carregar contatos ──
-
-async function loadContactsForPhone(sessionId, phoneId, io, attempt = 1) {
+/**
+ * Recarrega contatos de um telefone.
+ * @param {string} sessionId
+ * @param {string} phoneId
+ * @param {import('socket.io').Server} io
+ */
+async function loadContactsById(sessionId, phoneId, io) {
   const sess = sessions[sessionId];
   if (!sess) return;
-  const phone = sess.phones[phoneId];
-  if (!phone || phone.status !== 'ready' || !phone.client) return;
-
-  const retryMs = attempt === 1 ? 4000 : 6000;
-
-  emit(sessionId, io, 'phone_status', {
-    phoneId,
-    status: 'ready',
-    message: `Carregando contatos${attempt > 1 ? ` (${attempt}/${config.CONTACT_LOAD_RETRIES})` : ''}...`,
-  });
-
-  try {
-    const chats = await phone.client.getChats();
-    console.log(`[${sessionId}:${phoneId}] getChats tentativa ${attempt}: ${chats.length} conversas`);
-
-    if (chats.length === 0 && attempt < config.CONTACT_LOAD_RETRIES) {
-      await sleep(retryMs);
-      return loadContactsForPhone(sessionId, phoneId, io, attempt + 1);
-    }
-
-    phone.contacts = chats.map(c => ({
-      id: c.id._serialized,
-      name: c.name || c.id.user,
-      isGroup: c.isGroup,
-      unread: c.unreadCount || 0,
-    })).sort((a, b) => a.name.localeCompare(b.name));
-
-    await saveCachedContacts(phoneId, phone.contacts);
-    emit(sessionId, io, 'phone_contacts', { phoneId, contacts: phone.contacts });
-    emit(sessionId, io, 'phone_status', { phoneId, status: 'ready', message: `Pronto — ${phone.contacts.length} conversas carregadas` });
-    emitPhonesList(sessionId, io);
-  } catch (e) {
-    console.error(`[${sessionId}:${phoneId}] Erro ao carregar contatos (tentativa ${attempt}):`, e.message);
-    const transient = e.message.includes('timed out') || e.message.includes('context') || e.message.includes('Target');
-    if (transient && attempt < config.CONTACT_LOAD_RETRIES) {
-      await sleep(retryMs);
-      return loadContactsForPhone(sessionId, phoneId, io, attempt + 1);
-    }
-    emit(sessionId, io, 'phone_status', { phoneId, status: 'ready', message: 'Erro ao carregar contatos.' });
-  }
+  return loadContactsForPhone(sess, phoneId, io);
 }
 
-// ── Limpeza ──
-
-async function destroyAllSessions() {
-  for (const [, sess] of Object.entries(sessions)) {
-    for (const [phoneId, phone] of Object.entries(sess.phones)) {
-      clearTimeout(phone.watchdog);
-      phone.watchdog = null;
-      if (phone.client) {
-        try { await Promise.race([phone.client.destroy(), sleep(5000)]); } catch {}
-        phone.client = null;
-      }
-      phone.status = 'disconnected';
-    }
-  }
+/**
+ * Encerra todos os clientes sem logout — mantém LocalAuth em disco.
+ * Chamado no fechamento do app. NUNCA usar logout() aqui.
+ */
+async function destroyAll() {
+  return destroyAllSessions(sessions);
 }
 
+/** Remove sessões inativas do mapa em memória */
 function cleanStaleSessions() {
   const ttlCutoff = Date.now() - config.SESSION_TTL_MS;
   for (const [id, sess] of Object.entries(sessions)) {
@@ -397,7 +190,7 @@ function cleanStaleSessions() {
     const isStale = sess.lastActivityAt < ttlCutoff;
     if (allDisconnected && isStale && !sess.isSending) {
       delete sessions[id];
-      console.log(`[${id}] Sessão desconectada removida da memória (TTL)`);
+      logger.info(`[${id}] Sessão desconectada removida da memória (TTL)`);
     }
   }
 }
@@ -409,13 +202,13 @@ module.exports = {
   addPhone,
   renamePhone,
   removePhone,
-  connectPhone,
-  disconnectPhone,
-  loadContactsForPhone,
-  destroyAllSessions,
+  connectPhone: connectPhoneById,
+  disconnectPhone: disconnectPhoneById,
+  loadContactsForPhone: loadContactsById,
+  destroyAllSessions: destroyAll,
   cleanStaleSessions,
   emit,
   phonesListPayload,
   emitPhonesList,
-  MAX_PHONES_PER_SESSION,
+  MAX_PHONES_PER_SESSION: config.MAX_PHONES_PER_SESSION,
 };

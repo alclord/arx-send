@@ -4,11 +4,13 @@ const { MessageMedia } = require('whatsapp-web.js');
 const config = require('../app/config');
 const { getSession, touchSession, emit } = require('./sessionService');
 const { personalizeMessage, removeNinthDigit, sleep } = require('../utils/helpers');
-const { logSend } = require('./auditService');
+const { logSend, logSendStart, logSendDone } = require('./auditService');
+const { EVENTS } = require('../socket/events');
 
 function isLidError(err) {
   const msg = err?.message || '';
-  return msg.includes('LID') || msg.includes('lid') || msg.includes('invalid wid');
+  // Usa \bLID\b para evitar falso positivo com 'invalid' (que contém a substring 'lid')
+  return /\bLID\b/i.test(msg) || msg.includes('invalid wid');
 }
 
 function isTransientError(err) {
@@ -53,8 +55,11 @@ async function sendMessages(sessionId, io, { contactIds, message, filename, dela
 
   const total = contactIds.length;
   const delay = Math.max(delayMs || config.DEFAULT_SEND_DELAY_MS, config.MIN_SEND_DELAY_MS);
+  let sentCount = 0;
+  let failedCount = 0;
 
-  emit(sessionId, io, 'send_start', { total });
+  logSendStart(sessionId, phoneId, total);
+  emit(sessionId, io, EVENTS.SEND_START, { total });
 
   try {
     let media = null;
@@ -66,14 +71,14 @@ async function sendMessages(sessionId, io, { contactIds, message, filename, dela
 
     for (let i = 0; i < contactIds.length; i++) {
       if (sess.stopRequested) {
-        emit(sessionId, io, 'send_stopped', { index: i, total });
+        emit(sessionId, io, EVENTS.SEND_STOPPED, { index: i, total });
         break;
       }
 
       const contact = phone.contacts.find(c => c.id === contactIds[i]);
       const name = contact?.name || contactIds[i];
 
-      emit(sessionId, io, 'send_progress', { index: i, total, name, status: 'sending' });
+      emit(sessionId, io, EVENTS.SEND_PROGRESS, { index: i, total, name, status: 'sending' });
 
       const rowData = contactsData?.[contactIds[i]] || {};
       const finalMsg = personalizeMessage(message?.trim() || '', rowData);
@@ -106,29 +111,35 @@ async function sendMessages(sessionId, io, { contactIds, message, filename, dela
             sent = true;
           } else {
             console.error(`[${sessionId}] Erro ao enviar para ${name} (alt):`, retryResult.err.message);
-            emit(sessionId, io, 'send_progress', { index: i, total, name, status: 'error', error: retryResult.err.message });
+            emit(sessionId, io, EVENTS.SEND_PROGRESS, { index: i, total, name, status: 'error', error: retryResult.err.message });
             logSend(sessionId, contactIds[i], 'failed', retryResult.err.message);
+            failedCount++;
           }
         } else {
           console.error(`[${sessionId}] Erro LID sem alt para ${name}:`, result.err.message);
-          emit(sessionId, io, 'send_progress', { index: i, total, name, status: 'error', error: result.err.message });
+          emit(sessionId, io, EVENTS.SEND_PROGRESS, { index: i, total, name, status: 'error', error: result.err.message });
           logSend(sessionId, contactIds[i], 'failed', result.err.message);
+          failedCount++;
         }
       } else {
         console.error(`[${sessionId}] Erro ao enviar para ${name}:`, result.err.message);
-        emit(sessionId, io, 'send_progress', { index: i, total, name, status: 'error', error: result.err.message });
+        emit(sessionId, io, EVENTS.SEND_PROGRESS, { index: i, total, name, status: 'error', error: result.err.message });
         logSend(sessionId, contactIds[i], 'failed', result.err.message);
+        failedCount++;
       }
 
       if (sent) {
-        emit(sessionId, io, 'send_progress', { index: i, total, name, status: 'done' });
+        emit(sessionId, io, EVENTS.SEND_PROGRESS, { index: i, total, name, status: 'done' });
         logSend(sessionId, contactIds[i], 'sent');
+        sentCount++;
       }
 
       if (i < contactIds.length - 1 && !sess.stopRequested) await sleep(delay);
     }
 
-    emit(sessionId, io, 'send_done', { total });
+    const stopped = sess.stopRequested;
+    emit(sessionId, io, EVENTS.SEND_DONE, { total });
+    logSendDone(sessionId, phoneId, { sent: sentCount, failed: failedCount, stopped });
   } finally {
     sess.isSending = false;
     touchSession(sessionId);
@@ -145,4 +156,4 @@ async function sendMessages(sessionId, io, { contactIds, message, filename, dela
   }
 }
 
-module.exports = { sendMessages };
+module.exports = { sendMessages, trySendWithRetry };

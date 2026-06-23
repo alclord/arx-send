@@ -8,7 +8,9 @@
     "electron": "electron .",
     "build": "electron-builder --win && node scripts/copy-asar.js",
     "build:server": "pkg src/server.js --output dist/arx-send-server.exe --compress GZip",
-    "test": "node --test tests/utils.test.js"
+    "test": "node --test tests/utils.test.js tests/sessionService.test.js tests/sendService.test.js tests/sendFlow.test.js",
+    "lint": "eslint src/ public/js/ --ext .js",
+    "lint:fix": "eslint src/ public/js/ --ext .js --fix"
   },
   "build": {
     "appId": "com.arx.arx-send",
