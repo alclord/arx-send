@@ -37,7 +37,7 @@ async function loadContactsForPhone(sess, phoneId, io, attempt = 1) {
   const phone = sess.phones[phoneId];
   if (!phone || phone.status !== 'ready' || !phone.client) return;
 
-  const retryMs = attempt === 1 ? 4000 : 6000;
+  const retryMs = attempt === 1 ? 10000 : 15000;
 
   emitToSession(sessionId, io, EVENTS.PHONE_STATUS, {
     phoneId,
@@ -70,9 +70,9 @@ async function loadContactsForPhone(sess, phoneId, io, attempt = 1) {
       status: 'ready',
       message: `Pronto — ${phone.contacts.length} conversas carregadas`,
     });
-    // Atualiza lista de telefones com novo contactCount
     const { emitPhonesList } = require('./sessionService');
     emitPhonesList(sessionId, io);
+    return 'ok';
   } catch (e) {
     logger.error(`[${sessionId}:${phoneId}] Erro ao carregar contatos (tentativa ${attempt}):`, e.message);
     const transient =
@@ -83,11 +83,15 @@ async function loadContactsForPhone(sess, phoneId, io, attempt = 1) {
       await sleep(retryMs);
       return loadContactsForPhone(sess, phoneId, io, attempt + 1);
     }
+    if (transient) {
+      return 'needs_reconnect';
+    }
     emitToSession(sessionId, io, EVENTS.PHONE_STATUS, {
       phoneId,
       status: 'ready',
       message: 'Erro ao carregar contatos.',
     });
+    return 'error';
   }
 }
 

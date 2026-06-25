@@ -101,7 +101,7 @@ async function connectPhone(sess, phoneId, io) {
       headless: true,
       executablePath,
       timeout: 120000,
-      protocolTimeout: 120000,
+      protocolTimeout: 300000,
       args: [
         '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
         '--disable-extensions', '--disable-default-apps', '--disable-sync',
@@ -168,10 +168,30 @@ async function connectPhone(sess, phoneId, io) {
       });
     }
 
-    await sleep(3000);
+    await sleep(6000);
     if (phone.status === 'ready') {
       const { loadContactsForPhone } = require('./contactManager');
-      await loadContactsForPhone(sess, phoneId, io);
+      const result = await loadContactsForPhone(sess, phoneId, io);
+      if (result === 'needs_reconnect') {
+        logger.warn(`[${sessionId}:${phoneId}] getChats esgotou retries — limpando sessão e reconectando`);
+        try { await phone.client.destroy(); } catch {}
+        phone.client = null;
+        phone.status = 'disconnected';
+        const authDir = path.join(config.sessionDir, sessionId, phoneId);
+        fs.rm(authDir, { recursive: true, force: true }, () => {
+          logger.info(`[${sessionId}:${phoneId}] LocalAuth limpo após falha de getChats`);
+        });
+        emitToSession(sessionId, io, EVENTS.PHONE_STATUS, {
+          phoneId,
+          status: 'error',
+          message: 'Sessão com falha ao carregar dados. Reconectando...',
+        });
+        _emitPhonesList(sess, sessionId, io);
+        await sleep(2000);
+        connectPhone(sess, phoneId, io).catch(err =>
+          logger.error(`[${sessionId}:${phoneId}] Erro ao reconectar após falha de getChats:`, err)
+        );
+      }
     }
   });
 
