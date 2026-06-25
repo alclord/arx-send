@@ -79,13 +79,21 @@ async function connectPhone(sess, phoneId, io) {
   if (!phone) return;
 
   if (phone.client) {
+    const browserProcess = phone.client.pupBrowser?.process();
     try { await Promise.race([phone.client.destroy(), sleep(5000)]); } catch {}
+    if (browserProcess && !browserProcess.killed) {
+      try { browserProcess.kill('SIGKILL'); } catch {}
+      await sleep(500);
+    }
     phone.client = null;
     await sleep(1000);
   }
 
   const executablePath = getChromiumPath();
   logger.info(`[${sessionId}:${phoneId}] ${executablePath ? '✓ Chromium: ' + executablePath : '⚠ Chromium padrão'}`);
+
+  const lockFile = path.join(config.sessionDir, sessionId, phoneId, `session-${sessionId}_${phoneId}`, 'SingletonLock');
+  try { fs.unlinkSync(lockFile); logger.info(`[${sessionId}:${phoneId}] SingletonLock removido`); } catch {}
 
   phone.client = new Client({
     authStrategy: new LocalAuth({
@@ -236,20 +244,32 @@ async function connectPhone(sess, phoneId, io) {
     phone.client = null;
     phone.status = 'disconnected';
 
-    const authDir = path.join(config.sessionDir, sessionId, phoneId);
-    fs.rm(authDir, { recursive: true, force: true }, () => {
-      logger.info(`[${sessionId}:${phoneId}] LocalAuth limpo após falha de inicialização`);
-    });
-
+    const isAlreadyRunning = err.message.includes('already running');
     const isContextError =
       err.message.includes('context') ||
       err.message.includes('Target closed') ||
       err.message.includes('detached');
-    const msg = isContextError
-      ? 'Sessão anterior inválida. Clique em Conectar para gerar um novo QR.'
-      : 'Falha ao abrir o navegador. Verifique se o Google Chrome está instalado.';
 
-    emitToSession(sessionId, io, EVENTS.PHONE_STATUS, { phoneId, status: 'error', message: msg });
+    if (isAlreadyRunning) {
+      // Sessão OK — só o processo Chrome anterior ficou zumbi. Limpa apenas o lock.
+      const lock = path.join(config.sessionDir, sessionId, phoneId, `session-${sessionId}_${phoneId}`, 'SingletonLock');
+      try { fs.unlinkSync(lock); } catch {}
+      logger.info(`[${sessionId}:${phoneId}] SingletonLock removido após "already running"`);
+      emitToSession(sessionId, io, EVENTS.PHONE_STATUS, {
+        phoneId,
+        status: 'error',
+        message: 'Processo anterior em execução foi encerrado. Clique em Conectar.',
+      });
+    } else {
+      const authDir = path.join(config.sessionDir, sessionId, phoneId);
+      fs.rm(authDir, { recursive: true, force: true }, () => {
+        logger.info(`[${sessionId}:${phoneId}] LocalAuth limpo após falha de inicialização`);
+      });
+      const msg = isContextError
+        ? 'Sessão anterior inválida. Clique em Conectar para gerar um novo QR.'
+        : 'Falha ao abrir o navegador. Verifique se o Google Chrome está instalado.';
+      emitToSession(sessionId, io, EVENTS.PHONE_STATUS, { phoneId, status: 'error', message: msg });
+    }
     _emitPhonesList(sess, sessionId, io);
   });
 }
