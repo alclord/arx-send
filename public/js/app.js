@@ -930,6 +930,19 @@ document.getElementById('loginBtn').addEventListener('click', enterSession);
 document.getElementById('updateBtn').addEventListener('click', installUpdate);
 document.getElementById('checkUpdateBtn').addEventListener('click', checkForUpdates);
 document.getElementById('diagBtn').addEventListener('click', openDiagModal);
+document.getElementById('supportBtn').addEventListener('click', async () => {
+  const url = window?.electronAPI?.supportFormUrl ?? 'https://forms.gle/BsiCqjt68pGTjsrG7';
+  try {
+    if (window?.electronAPI?.openExternal) {
+      await window.electronAPI.openExternal(url);
+    } else {
+      window.open(url, '_blank');
+    }
+    showToast('Formulário aberto no seu navegador.');
+  } catch {
+    showToast(`Não foi possível abrir. Acesse: ${url}`, 'error');
+  }
+});
 document.getElementById('updateCheckBtn').addEventListener('click', checkForUpdates);
 document.getElementById('sessionBadge').addEventListener('click', switchSession);
 

@@ -1,6 +1,6 @@
 {
   "name": "arx-send",
-  "version": "2.2.2",
+  "version": "2.3.0",
   "description": "ARX Send - Disparo em massa via WhatsApp",
   "main": "src/main.js",
   "scripts": {

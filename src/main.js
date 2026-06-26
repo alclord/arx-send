@@ -226,6 +226,11 @@ if (!gotLock) {
   ipcMain.handle('open-logs-folder', () => {
     shell.openPath(config.logsDir);
   });
+  ipcMain.handle('open-external', (event, url) => {
+    if (typeof url === 'string' && url.startsWith('https://')) {
+      shell.openExternal(url);
+    }
+  });
 
   app.whenReady().then(() => {
     createWindow();

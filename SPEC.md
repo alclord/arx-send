@@ -413,6 +413,29 @@ Estes valores não devem ser alterados sem atualizar esta SPEC primeiro.
 
 ---
 
+### F-008 — Formulário de contato (feedback e suporte)
+
+**Descrição:** O operador pode abrir um formulário de contato para enviar feedback, sugestões ou pedidos de suporte. O formulário é um Google Form externo, aberto no navegador padrão do Windows. As respostas chegam diretamente à equipe ARX Send.
+
+**Critérios de aceitação:**
+
+| # | Dado | Quando | Então |
+|---|------|--------|-------|
+| 1 | Qualquer estado do app | Operador clica no botão "Contato / Suporte" | O Google Form abre no navegador padrão do Windows via `shell.openExternal()` |
+| 2 | Navegador abriu | — | Toast exibido no app: "Formulário aberto no seu navegador." |
+| 3 | `shell.openExternal()` falha | — | Toast de erro: "Não foi possível abrir o navegador. Acesse: [URL do form]" com a URL visível para cópia manual |
+
+**Restrições:**
+- A URL do Google Form é hardcoded: `https://forms.gle/BsiCqjt68pGTjsrG7` — registrada como `SUPPORT_FORM_URL` em `src/app/config.js`.
+- Nenhum dado é enviado pelo backend — zero credenciais no código.
+- O Google Form contém os campos: **Tipo** (múltipla escolha: Suporte técnico / Feedback / Sugestão de melhoria), **Seu email** e **Mensagem**.
+- Se a URL do form mudar, atualizar `SUPPORT_FORM_URL` em `config.js` e publicar nova versão.
+
+**Localização na UI:**
+- Botão discreto no rodapé ou no menu/header principal, sempre visível independentemente da sessão ativa.
+
+---
+
 ## 9. Fora de escopo
 
 Estes comportamentos **não são** responsabilidade do ARX Send. Se surgir demanda, requer entrada nesta SPEC primeiro.
@@ -427,6 +450,8 @@ Estes comportamentos **não são** responsabilidade do ARX Send. Se surgir deman
 | Analytics de campanhas | Somente audit log bruto; sem dashboards |
 | Contatos internacionais (fora do Brasil) | Normalização de telefone só implementada para números brasileiros |
 | Edição/exclusão de contatos no WhatsApp | App não modifica a agenda do telefone |
+| Rastreamento de tickets de suporte | F-008 usa Google Form externo; não há sistema de tickets integrado |
+| Resposta automática ao operador | Nenhuma confirmação de recebimento é enviada pelo app |
 
 ---
 

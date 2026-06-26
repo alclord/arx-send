@@ -535,6 +535,14 @@ textarea::placeholder{color:var(--muted)}
   transition:all .15s;
 }
 .diag-btn:hover{background:var(--surface2);border-color:var(--border);color:var(--text)}
+/* ── SUPPORT BUTTON (F-008) ── */
+.support-wrap{display:flex;align-items:center;margin-right:2px}
+.support-btn{
+  width:30px;height:30px;background:none;border:1px solid transparent;border-radius:7px;
+  color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:all .15s;
+}
+.support-btn:hover{background:rgba(37,211,102,.1);border-color:rgba(37,211,102,.3);color:var(--accent)}
 #diagModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:var(--z-modal-backdrop);align-items:center;justify-content:center}
 #diagModal.show{display:flex}
 .diag-card{
