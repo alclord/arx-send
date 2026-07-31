@@ -63,6 +63,8 @@ function makePhone(id, name) {
     status: 'disconnected',
     contacts: loadCachedContacts(id),
     watchdog: null,
+    watchdogCount: 0,
+    heartbeat: null,
     lastActivityAt: Date.now(),
   };
 }
