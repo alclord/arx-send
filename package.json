@@ -1,6 +1,6 @@
 {
   "name": "arx-send",
-  "version": "2.3.0",
+  "version": "2.3.3",
   "description": "ARX Send - Disparo em massa via WhatsApp",
   "main": "src/main.js",
   "scripts": {
@@ -10,7 +10,8 @@
     "build:server": "pkg src/server.js --output dist/arx-send-server.exe --compress GZip",
     "test": "node --test tests/utils.test.js tests/sessionService.test.js tests/sendService.test.js tests/sendFlow.test.js",
     "lint": "eslint src/ public/js/ --ext .js",
-    "lint:fix": "eslint src/ public/js/ --ext .js --fix"
+    "lint:fix": "eslint src/ public/js/ --ext .js --fix",
+    "postinstall": "patch-package"
   },
   "build": {
     "appId": "com.arx.arx-send",
@@ -27,12 +28,24 @@
       "!src/loading.html"
     ],
     "extraResources": [
-      { "from": "src/loading.html", "to": "loading.html" }
+      {
+        "from": "src/loading.html",
+        "to": "loading.html"
+      }
     ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "public/logo.png",
-      "publish": ["github"],
+      "publish": [
+        "github"
+      ],
       "signAndEditExecutable": false
     },
     "nsis": {
@@ -41,7 +54,9 @@
       "createDesktopShortcut": true,
       "runAfterFinish": true,
       "artifactName": "ARX-Send-Setup-${version}.exe",
-      "installerLanguages": ["pt_BR"],
+      "installerLanguages": [
+        "pt_BR"
+      ],
       "language": "1046"
     },
     "publish": {
@@ -63,17 +78,18 @@
     "outputPath": "dist"
   },
   "dependencies": {
+    "electron-updater": "^6.3.9",
     "express": "^4.18.2",
     "multer": "^1.4.5-lts.1",
     "qrcode": "^1.5.3",
     "socket.io": "^4.7.2",
     "whatsapp-web.js": "^1.34.7",
-    "xlsx": "^0.18.5",
-    "electron-updater": "^6.3.9"
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "electron": "^42.3.3",
     "electron-builder": "^26.8.1",
+    "patch-package": "^8.0.1",
     "pkg": "^5.8.1"
   }
 }

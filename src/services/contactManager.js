@@ -37,7 +37,7 @@ async function loadContactsForPhone(sess, phoneId, io, attempt = 1) {
   const phone = sess.phones[phoneId];
   if (!phone || phone.status !== 'ready' || !phone.client) return;
 
-  const retryMs = attempt === 1 ? 10000 : 15000;
+  const retryMs = attempt === 1 ? 4000 : 6000;
 
   emitToSession(sessionId, io, EVENTS.PHONE_STATUS, {
     phoneId,
@@ -78,7 +78,12 @@ async function loadContactsForPhone(sess, phoneId, io, attempt = 1) {
     const transient =
       e.message.includes('timed out') ||
       e.message.includes('context') ||
-      e.message.includes('Target');
+      e.message.includes('Target') ||
+      e.message.includes('is not defined') ||
+      // Página ainda reinjetando funções logo após o QR/autenticação
+      e.message.includes('Cannot read properties of undefined') ||
+      // ReferenceError minificada do bundle interno do WhatsApp Web (ex: "r", "e1")
+      /^[a-zA-Z_$][\w$]*$/.test(e.message.trim());
     if (transient && attempt < config.CONTACT_LOAD_RETRIES) {
       await sleep(retryMs);
       return loadContactsForPhone(sess, phoneId, io, attempt + 1);

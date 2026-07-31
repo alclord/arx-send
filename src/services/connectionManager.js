@@ -31,31 +31,132 @@ function emitToSession(sessionId, io, event, data) {
   io.to(`s:${sessionId}`).emit(event, data);
 }
 
+// R2: delays progressivos do watchdog (180s → 5min → 10min)
+const WATCHDOG_DELAYS = [
+  config.WATCHDOG_TIMEOUT_MS,
+  300000,
+  600000,
+];
+
+// Fixa a versão do WhatsApp Web na última que carregou contatos com sucesso,
+// evitando quebras quando o WhatsApp publica uma versão nova incompatível
+// com o whatsapp-web.js (ex: getChats falhando com ReferenceError minificada).
+const WA_VERSION_CACHE_DIR = path.join(config.cacheDir, 'wa-version');
+const WA_VERSION_PIN_FILE = path.join(WA_VERSION_CACHE_DIR, 'pinned-version.txt');
+
+function readPinnedWaVersion() {
+  try {
+    return fs.readFileSync(WA_VERSION_PIN_FILE, 'utf-8').trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writePinnedWaVersion(version) {
+  try {
+    fs.mkdirSync(WA_VERSION_CACHE_DIR, { recursive: true });
+    fs.writeFileSync(WA_VERSION_PIN_FILE, version);
+  } catch (err) {
+    logger.warn(`Falha ao gravar versão pinada do WhatsApp Web: ${err.message}`);
+  }
+}
+
 /**
- * Inicia watchdog para um telefone travado em "connecting".
- * Após ms milissegundos sem transição, reconnecta automaticamente.
+ * Encerra o client e aguarda o processo do Chromium morrer de fato antes de
+ * seguir. Sem isso, no Windows o processo pode ainda estar segurando os
+ * arquivos do perfil (LocalAuth) quando o código tenta apagá-los em seguida,
+ * fazendo o rm() falhar silenciosamente e a sessão "quebrada" sobreviver.
+ * @param {import('../types').Phone} phone
+ */
+async function destroyClientAndWait(phone) {
+  if (!phone.client) return;
+  const browserProcess = phone.client.pupBrowser?.process();
+  try { await Promise.race([phone.client.destroy(), sleep(5000)]); } catch {}
+  if (browserProcess && !browserProcess.killed) {
+    try { browserProcess.kill('SIGKILL'); } catch {}
+  }
+  phone.client = null;
+  await sleep(1000);
+}
+
+/**
+ * Remove o diretório do LocalAuth com retry, já que logo após destroyClientAndWait
+ * o Windows pode levar mais alguns instantes para soltar handles de arquivos
+ * (ex: SQLite/LevelDB do perfil Chromium).
+ * @param {string} authDir
+ * @param {string} sessionId
+ * @param {string} phoneId
+ * @returns {Promise<boolean>} true se o diretório foi de fato removido
+ */
+async function removeAuthDir(authDir, sessionId, phoneId) {
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      await fs.promises.rm(authDir, { recursive: true, force: true });
+      return true;
+    } catch (err) {
+      if (attempt === 5) {
+        logger.warn(`[${sessionId}:${phoneId}] Não foi possível remover LocalAuth (${err.message}) — sessão pode persistir quebrada`);
+        return false;
+      }
+      await sleep(500);
+    }
+  }
+  return false;
+}
+
+/**
+ * Inicia watchdog com backoff progressivo (R1+R2+R3).
+ * Após WATCHDOG_DELAYS[watchdogCount] ms sem atingir ready:
+ *   - Tentativas 1-2: reconecta com feedback de retry na UI
+ *   - Tentativa 3: limpa LocalAuth, exibe erro e notifica (R1+R5)
  *
  * @param {import('../types').Session} sess
  * @param {string} phoneId
  * @param {import('socket.io').Server} io
- * @param {number} [ms]
  */
-function setPhoneWatchdog(sess, phoneId, io, ms = config.WATCHDOG_TIMEOUT_MS) {
+function setPhoneWatchdog(sess, phoneId, io) {
   const phone = sess.phones[phoneId];
   if (!phone) return;
   clearTimeout(phone.watchdog);
-  phone.watchdog = setTimeout(() => {
-    if (phone.status === 'connecting') {
-      logger.warn(`[${sess.id}:${phoneId}] Watchdog: travado em connecting — reconectando...`);
+
+  const count = phone.watchdogCount;
+  const ms = WATCHDOG_DELAYS[Math.min(count, WATCHDOG_DELAYS.length - 1)];
+
+  phone.watchdog = setTimeout(async () => {
+    if (phone.status !== 'connecting') return;
+
+    phone.watchdogCount++;
+
+    if (phone.watchdogCount >= WATCHDOG_DELAYS.length) {
+      // R1: esgotou tentativas — limpa LocalAuth e exige novo QR
+      logger.warn(`[${sess.id}:${phoneId}] Watchdog: ${WATCHDOG_DELAYS.length} tentativas sem sucesso — limpando LocalAuth`);
+      phone.watchdogCount = 0;
+      await destroyClientAndWait(phone);
+      const authDir = path.join(config.sessionDir, sess.id, phoneId);
+      await removeAuthDir(authDir, sess.id, phoneId);
+      phone.status = 'error';
       emitToSession(sess.id, io, EVENTS.PHONE_STATUS, {
         phoneId,
-        status: 'connecting',
-        message: 'Reconectando automaticamente...',
+        status: 'error',
+        message: 'Sessão rejeitada pelo WhatsApp. Clique em Conectar para escanear o QR.',
+        notify: true, // R5: dispara notificação Windows no frontend
       });
-      connectPhone(sess, phoneId, io).catch(err =>
-        logger.error(`[${sess.id}:${phoneId}] Watchdog erro:`, err)
-      );
+      _emitPhonesList(sess, sess.id, io);
+      return;
     }
+
+    // R2+R3: backoff progressivo com feedback visível
+    const nextMs = WATCHDOG_DELAYS[Math.min(phone.watchdogCount, WATCHDOG_DELAYS.length - 1)];
+    const nextLabel = nextMs >= 60000 ? `${Math.round(nextMs / 60000)}min` : `${Math.round(nextMs / 1000)}s`;
+    logger.warn(`[${sess.id}:${phoneId}] Watchdog: tentativa ${phone.watchdogCount}/${WATCHDOG_DELAYS.length} — reconectando...`);
+    emitToSession(sess.id, io, EVENTS.PHONE_STATUS, {
+      phoneId,
+      status: 'connecting',
+      message: `Reconectando... tentativa ${phone.watchdogCount}/${WATCHDOG_DELAYS.length} (próxima em ${nextLabel})`,
+    });
+    connectPhone(sess, phoneId, io).catch(err =>
+      logger.error(`[${sess.id}:${phoneId}] Watchdog erro:`, err)
+    );
   }, ms);
 }
 
@@ -63,6 +164,51 @@ function setPhoneWatchdog(sess, phoneId, io, ms = config.WATCHDOG_TIMEOUT_MS) {
 function clearPhoneWatchdog(phone) {
   clearTimeout(phone.watchdog);
   phone.watchdog = null;
+  phone.watchdogCount = 0; // R1: reset ao conectar com sucesso
+}
+
+/**
+ * Inicia heartbeat de 5min para detectar sessões mortas silenciosamente (R4).
+ * @param {import('../types').Session} sess
+ * @param {string} phoneId
+ * @param {import('socket.io').Server} io
+ */
+function startPhoneHeartbeat(sess, phoneId, io) {
+  const phone = sess.phones[phoneId];
+  if (!phone) return;
+  clearInterval(phone.heartbeat);
+  phone.heartbeat = setInterval(async () => {
+    if (phone.status !== 'ready' || !phone.client) {
+      clearPhoneHeartbeat(phone);
+      return;
+    }
+    try {
+      const state = await phone.client.getState();
+      if (state !== 'CONNECTED') {
+        logger.warn(`[${sess.id}:${phoneId}] Heartbeat: estado ${state} — reconectando proativamente`);
+        clearPhoneHeartbeat(phone);
+        phone.status = 'disconnected';
+        phone.contacts = [];
+        emitToSession(sess.id, io, EVENTS.PHONE_STATUS, { phoneId, status: 'disconnected', message: 'Conexão perdida — reconectando...' });
+        emitToSession(sess.id, io, EVENTS.PHONE_CONTACTS, { phoneId, contacts: [] });
+        _emitPhonesList(sess, sess.id, io);
+        connectPhone(sess, phoneId, io).catch(err => logger.error(`[${sess.id}:${phoneId}] Heartbeat reconexão erro:`, err));
+      }
+    } catch (err) {
+      logger.warn(`[${sess.id}:${phoneId}] Heartbeat falhou: ${err.message} — reconectando`);
+      clearPhoneHeartbeat(phone);
+      phone.status = 'disconnected';
+      emitToSession(sess.id, io, EVENTS.PHONE_STATUS, { phoneId, status: 'disconnected', message: 'Conexão perdida — reconectando...' });
+      _emitPhonesList(sess, sess.id, io);
+      connectPhone(sess, phoneId, io).catch(err2 => logger.error(`[${sess.id}:${phoneId}] Heartbeat reconexão erro:`, err2));
+    }
+  }, 5 * 60 * 1000);
+}
+
+/** @param {import('../types').Phone} phone */
+function clearPhoneHeartbeat(phone) {
+  clearInterval(phone.heartbeat);
+  phone.heartbeat = null;
 }
 
 /**
@@ -78,16 +224,7 @@ async function connectPhone(sess, phoneId, io) {
   const phone = sess.phones[phoneId];
   if (!phone) return;
 
-  if (phone.client) {
-    const browserProcess = phone.client.pupBrowser?.process();
-    try { await Promise.race([phone.client.destroy(), sleep(5000)]); } catch {}
-    if (browserProcess && !browserProcess.killed) {
-      try { browserProcess.kill('SIGKILL'); } catch {}
-      await sleep(500);
-    }
-    phone.client = null;
-    await sleep(1000);
-  }
+  await destroyClientAndWait(phone);
 
   const executablePath = getChromiumPath();
   logger.info(`[${sessionId}:${phoneId}] ${executablePath ? '✓ Chromium: ' + executablePath : '⚠ Chromium padrão'}`);
@@ -100,10 +237,10 @@ async function connectPhone(sess, phoneId, io) {
       clientId: `${sessionId}_${phoneId}`,
       dataPath: path.join(config.sessionDir, sessionId, phoneId),
     }),
+    webVersion: readPinnedWaVersion(),
     webVersionCache: {
-      type: 'remote',
-      remotePath:
-        'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1041871181-alpha.html',
+      type: 'local',
+      path: WA_VERSION_CACHE_DIR,
     },
     puppeteer: {
       headless: true,
@@ -176,19 +313,25 @@ async function connectPhone(sess, phoneId, io) {
       });
     }
 
-    await sleep(6000);
+    await sleep(3000);
     if (phone.status === 'ready') {
       const { loadContactsForPhone } = require('./contactManager');
       const result = await loadContactsForPhone(sess, phoneId, io);
+      if (result === 'ok') {
+        startPhoneHeartbeat(sess, phoneId, io); // R4
+        // Só pina a versão depois que getChats confirmou que ela funciona
+        try {
+          const waVersion = await phone.client.getWWebVersion();
+          writePinnedWaVersion(waVersion);
+        } catch {}
+      }
       if (result === 'needs_reconnect') {
         logger.warn(`[${sessionId}:${phoneId}] getChats esgotou retries — limpando sessão e reconectando`);
-        try { await phone.client.destroy(); } catch {}
-        phone.client = null;
+        await destroyClientAndWait(phone);
         phone.status = 'disconnected';
         const authDir = path.join(config.sessionDir, sessionId, phoneId);
-        fs.rm(authDir, { recursive: true, force: true }, () => {
-          logger.info(`[${sessionId}:${phoneId}] LocalAuth limpo após falha de getChats`);
-        });
+        const removed = await removeAuthDir(authDir, sessionId, phoneId);
+        if (removed) logger.info(`[${sessionId}:${phoneId}] LocalAuth limpo após falha de getChats`);
         emitToSession(sessionId, io, EVENTS.PHONE_STATUS, {
           phoneId,
           status: 'error',
@@ -205,6 +348,7 @@ async function connectPhone(sess, phoneId, io) {
 
   phone.client.on('disconnected', reason => {
     clearPhoneWatchdog(phone);
+    clearPhoneHeartbeat(phone); // R4
     phone.status = 'disconnected';
     phone.contacts = [];
     emitToSession(sessionId, io, EVENTS.PHONE_STATUS, {
@@ -218,12 +362,12 @@ async function connectPhone(sess, phoneId, io) {
 
   phone.client.on('auth_failure', async () => {
     clearPhoneWatchdog(phone);
+    clearPhoneHeartbeat(phone); // R4
     phone.status = 'disconnected';
-    try { await phone.client.destroy(); } catch {}
-    phone.client = null;
+    await destroyClientAndWait(phone);
     // Apaga LocalAuth corrompido/expirado para que a próxima tentativa gere novo QR
     const authDir = path.join(config.sessionDir, sessionId, phoneId);
-    fs.rm(authDir, { recursive: true, force: true }, () => {});
+    await removeAuthDir(authDir, sessionId, phoneId);
     emitToSession(sessionId, io, EVENTS.PHONE_STATUS, {
       phoneId,
       status: 'error',
@@ -237,7 +381,7 @@ async function connectPhone(sess, phoneId, io) {
   _emitPhonesList(sess, sessionId, io);
   setPhoneWatchdog(sess, phoneId, io);
 
-  phone.client.initialize().catch(err => {
+  phone.client.initialize().catch(async err => {
     logger.error(`[${sessionId}:${phoneId}] Falha ao inicializar cliente:`, err.message);
     clearPhoneWatchdog(phone);
     try { phone.client.destroy(); } catch {}
@@ -262,9 +406,8 @@ async function connectPhone(sess, phoneId, io) {
       });
     } else {
       const authDir = path.join(config.sessionDir, sessionId, phoneId);
-      fs.rm(authDir, { recursive: true, force: true }, () => {
-        logger.info(`[${sessionId}:${phoneId}] LocalAuth limpo após falha de inicialização`);
-      });
+      await fs.promises.rm(authDir, { recursive: true, force: true }).catch(() => {});
+      logger.info(`[${sessionId}:${phoneId}] LocalAuth limpo após falha de inicialização`);
       const msg = isContextError
         ? 'Sessão anterior inválida. Clique em Conectar para gerar um novo QR.'
         : 'Falha ao abrir o navegador. Verifique se o Google Chrome está instalado.';
@@ -282,6 +425,7 @@ async function connectPhone(sess, phoneId, io) {
  */
 async function disconnectPhone(phone) {
   clearPhoneWatchdog(phone);
+  clearPhoneHeartbeat(phone); // R4
   if (phone.client) {
     try { await phone.client.logout(); } catch {}
     try { await phone.client.destroy(); } catch {}
@@ -304,6 +448,7 @@ async function destroyAllSessions(sessions) {
   for (const sess of Object.values(sessions)) {
     for (const phone of Object.values(sess.phones)) {
       clearPhoneWatchdog(phone);
+      clearPhoneHeartbeat(phone); // R4
       if (phone.client) {
         try { await Promise.race([phone.client.destroy(), sleep(5000)]); } catch {}
         phone.client = null;
@@ -327,4 +472,4 @@ function _emitPhonesList(sess, sessionId, io) {
   io.to(`s:${sessionId}`).emit(EVENTS.PHONES_LIST, { phones: payload });
 }
 
-module.exports = { connectPhone, disconnectPhone, destroyAllSessions, setPhoneWatchdog, clearPhoneWatchdog };
+module.exports = { connectPhone, disconnectPhone, destroyAllSessions, setPhoneWatchdog, clearPhoneWatchdog, clearPhoneHeartbeat };
